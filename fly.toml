@@ -1,0 +1,23 @@
+# fly.toml app configuration file generated for saveetimelock-bold-wave-6991 on 2025-08-08T19:54:44-04:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'saveetimelock-bold-wave-6991'
+primary_region = 'bog'
+
+[build]
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  size = 'performance-2x'
+  memory = '4gb'
+  cpu_kind = 'shared'
+  cpus = 2

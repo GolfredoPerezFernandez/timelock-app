@@ -1,0 +1,5 @@
+# Cloudflare
+functions/**/*.js
+node_modules
+dist
+.env

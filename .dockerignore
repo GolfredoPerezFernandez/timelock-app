@@ -1,0 +1,4 @@
+# flyctl launch added from .gitignore
+# Cloudflare
+**/functions/**/*.js
+fly.toml

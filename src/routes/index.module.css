@@ -1,0 +1,421 @@
+/* Hero Section */
+.hero {
+  height: 100vh;
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)),
+    linear-gradient(to bottom, #1a4a73, #89abe3),
+    linear-gradient(170deg, #2c3e50 0%, #2c3e50 50%, #34495e 50%, #34495e 100%);
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: white;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40%;
+  background-image:
+    linear-gradient(120deg, #2c3e50 0%, #2c3e50 40%, transparent 40%),
+    linear-gradient(230deg, #34495e 0%, #34495e 60%, transparent 60%);
+  z-index: -1;
+}
+
+.heroContent {
+  max-width: 800px;
+  padding: 20px;
+}
+
+.hero h1 {
+  font-size: 4rem;
+  margin-bottom: 0.5rem;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.hero h2 {
+  font-size: 2rem;
+  margin-bottom: 1.5rem;
+  font-weight: normal;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.dates {
+  font-size: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.ctaButton {
+  display: inline-block;
+  padding: 12px 30px;
+  background-color: #ff6b6b;
+  color: white;
+  text-decoration: none;
+  border-radius: 30px;
+  font-weight: bold;
+  font-size: 1.1rem;
+  transition: background-color 0.3s;
+}
+
+.ctaButton:hover {
+  background-color: #ff5252;
+}
+
+/* Container */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* Section Styling */
+section {
+  padding: 80px 0;
+}
+
+section h2 {
+  text-align: center;
+  font-size: 2.5rem;
+  margin-bottom: 40px;
+  position: relative;
+}
+
+section h2:after {
+  content: '';
+  position: absolute;
+  bottom: -15px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 4px;
+  background-color: #ff6b6b;
+}
+
+/* About Section */
+.about {
+  background-color: #f9f9f9;
+}
+
+.about p {
+  font-size: 1.2rem;
+  line-height: 1.6;
+  text-align: center;
+  max-width: 800px;
+  margin: 0 auto 20px;
+}
+
+/* Event Details Section */
+.eventDetails {
+  background-color: #ffffff;
+}
+
+.detailsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 30px;
+}
+
+.detailCard {
+  background-color: #f9f9f9;
+  padding: 30px;
+  border-radius: 10px;
+  text-align: center;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s;
+}
+
+.detailCard:hover {
+  transform: translateY(-10px);
+}
+
+.detailCard h3 {
+  color: #ff6b6b;
+  margin-bottom: 15px;
+  font-size: 1.5rem;
+}
+
+.detailCard p {
+  font-size: 1.1rem;
+  line-height: 1.5;
+}
+
+/* Competition Structure */
+.competitionStructure {
+  background-color: #f9f9f9;
+}
+
+.competitionStructure p {
+  font-size: 1.2rem;
+  line-height: 1.6;
+  text-align: center;
+  max-width: 800px;
+  margin: 0 auto 40px;
+}
+
+.mountainInfo {
+  overflow-x: auto;
+}
+
+.mountainTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 auto;
+  background-color: white;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.mountainTable th,
+.mountainTable td {
+  padding: 15px;
+  text-align: center;
+  border: 1px solid #e0e0e0;
+}
+
+.mountainTable th {
+  background-color: #ff6b6b;
+  color: white;
+  font-size: 1.1rem;
+}
+
+.mountainTable tr:nth-child(even) {
+  background-color: #f5f5f5;
+}
+
+.mountainTable tr:hover {
+  background-color: #f0f0f0;
+}
+
+/* Challenge Types */
+.challengeTypes {
+  background-color: #ffffff;
+}
+
+.challengeGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 30px;
+}
+
+.challengeCard {
+  background-color: #f9f9f9;
+  padding: 30px;
+  border-radius: 10px;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.challengeCard h3 {
+  color: #ff6b6b;
+  margin-bottom: 15px;
+  font-size: 1.3rem;
+  border-bottom: 2px solid #ff6b6b;
+  padding-bottom: 10px;
+}
+
+.challengeCard p {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+/* Categories Section */
+.categories {
+  background-color: #f9f9f9;
+}
+
+.categoryColumns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 40px;
+  justify-content: center;
+}
+
+.categoryColumn {
+  flex: 1;
+  min-width: 300px;
+}
+
+.categoryColumn h3 {
+  text-align: center;
+  margin-bottom: 20px;
+  color: #333;
+  font-size: 1.5rem;
+}
+
+.categoryList {
+  list-style: none;
+  padding: 0;
+}
+
+.categoryList li {
+  padding: 15px 20px;
+  margin-bottom: 15px;
+  border-radius: 8px;
+  color: white;
+  font-weight: bold;
+}
+
+.categoryRed {
+  background-color: #ff5252;
+}
+
+.categoryGreen1 {
+  background-color: #4caf50;
+}
+
+.categoryGreen2 {
+  background-color: #2e7d32;
+}
+
+.categoryYellow {
+  background-color: #ffd600;
+  color: #333 !important;
+}
+
+.categoryTurquoise {
+  background-color: #00bcd4;
+}
+
+.categoryApple {
+  background-color: #8bc34a;
+}
+
+.categoryOrange {
+  background-color: #ff9800;
+}
+
+/* Awards Section */
+.awards {
+  background-color: #ffffff;
+}
+
+.awards p {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  max-width: 800px;
+  margin: 0 auto 20px;
+  text-align: center;
+}
+
+/* Footer */
+.footer {
+  background-color: #333;
+  color: white;
+  padding: 30px 0;
+  text-align: center;
+}
+
+.logoText {
+  margin-bottom: 20px;
+  display: inline-block;
+  position: relative;
+}
+
+.moaLogo {
+  font-size: 2.5rem;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: #ff6b6b;
+  display: block;
+}
+
+.expeditionLogo {
+  font-size: 1.2rem;
+  letter-spacing: 5px;
+  text-transform: uppercase;
+  color: white;
+  display: block;
+  position: relative;
+}
+
+.expeditionLogo::before {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 2px;
+  background-color: #ff6b6b;
+  bottom: -5px;
+  left: 0;
+}
+
+.footer p {
+  margin: 8px 0;
+}
+
+/* Scroll to Top Button */
+.scrollTopButton {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background-color: #ff6b6b;
+  color: white;
+  font-size: 24px;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s;
+  z-index: 999;
+}
+
+.scrollTopButton:hover {
+  background-color: #ff5252;
+  transform: translateY(-5px);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .hero h1 {
+    font-size: 3rem;
+  }
+  
+  .hero h2 {
+    font-size: 1.5rem;
+  }
+  
+  section {
+    padding: 60px 0;
+  }
+  
+  section h2 {
+    font-size: 2rem;
+  }
+  
+  .detailsGrid,
+  .challengeGrid {
+    grid-template-columns: 1fr;
+  }
+  
+  .categoryColumns {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero h1 {
+    font-size: 2.5rem;
+  }
+  
+  .hero h2 {
+    font-size: 1.2rem;
+  }
+  
+  .ctaButton {
+    padding: 10px 20px;
+    font-size: 1rem;
+  }
+  
+  section h2 {
+    font-size: 1.8rem;
+  }
+}

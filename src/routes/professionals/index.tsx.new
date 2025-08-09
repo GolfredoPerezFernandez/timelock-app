@@ -1,0 +1,400 @@
+import { component$, useSignal, useStore, $ } from '@builder.io/qwik';
+import { routeLoader$ } from '@builder.io/qwik-city';
+import { 
+  LuUsers, 
+  LuSearch,
+  LuPlus,
+  LuDownload,
+  LuFilter,
+  LuPencil,
+  LuTrash,
+  LuBriefcase,
+  LuEye,
+  LuUpload
+} from '@qwikest/icons/lucide';
+
+// Definición de tipo para professional
+interface Professional {
+  id: number;
+  name: string;
+  role: string;
+  wallet: string;
+  contracts: number;
+  active: boolean;
+}
+
+// Mock data for professionals
+const mockProfessionals: Professional[] = [
+  { id: 1, name: 'Ana García', role: 'Diseñadora UX/UI', wallet: '0x1234...5678', contracts: 3, active: true },
+  { id: 2, name: 'Carlos Méndez', role: 'Desarrollador Frontend', wallet: '0x2345...6789', contracts: 2, active: true },
+  { id: 3, name: 'Elena Rodríguez', role: 'Desarrolladora Backend', wallet: '0x3456...7890', contracts: 1, active: true },
+  { id: 4, name: 'Javier Martínez', role: 'Project Manager', wallet: '0x4567...8901', contracts: 0, active: false },
+  { id: 5, name: 'Sofía López', role: 'QA Tester', wallet: '0x5678...9012', contracts: 1, active: true },
+  { id: 6, name: 'Miguel Fernández', role: 'DevOps Engineer', wallet: '0x6789...0123', contracts: 2, active: true },
+  { id: 7, name: 'Laura Sánchez', role: 'Product Manager', wallet: '0x7890...1234', contracts: 3, active: true },
+  { id: 8, name: 'Daniel Torres', role: 'SEO Specialist', wallet: '0x8901...2345', contracts: 0, active: false },
+];
+
+export const useProfessionalsLoader = routeLoader$(() => {
+  return mockProfessionals;
+});
+
+export default component$(() => {
+  const professionals = useProfessionalsLoader();
+  const searchQuery = useSignal('');
+  const showNewProfessionalModal = useSignal(false);
+  const newProfessional = useStore({
+    name: '',
+    role: '',
+    description: '',
+    wallet: '',
+    observations: ''
+  });
+  
+  // Filtered professionals list as a signal
+  const filteredProfessionals = useSignal<Professional[]>(professionals.value);
+  
+  // Update filtered list when search query changes
+  const updateFilteredList = $(() => {
+    if (!searchQuery.value) {
+      filteredProfessionals.value = professionals.value;
+      return;
+    }
+    
+    const query = searchQuery.value.toLowerCase();
+    filteredProfessionals.value = professionals.value.filter(
+      prof => 
+        prof.name.toLowerCase().includes(query) ||
+        prof.role.toLowerCase().includes(query)
+    );
+  });
+  
+  // Form submit handler
+  const handleSubmit = $(() => {
+    console.log('New professional data:', newProfessional);
+    showNewProfessionalModal.value = false;
+    
+    // Reset form
+    newProfessional.name = '';
+    newProfessional.role = '';
+    newProfessional.description = '';
+    newProfessional.wallet = '';
+    newProfessional.observations = '';
+    
+    // In a real app, you would call a routeAction$ here to save the data
+  });
+
+  return (
+    <main class="min-h-screen bg-background-primary dark:bg-background-primary">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Header */}
+        <header class="mb-8">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex items-center">
+              <LuUsers class="h-8 w-8 text-primary mr-3" />
+              <div>
+                <h1 class="text-2xl sm:text-3xl font-bold text-text-primary dark:text-text-primary">
+                  Profesionales
+                </h1>
+                <p class="text-text-secondary dark:text-text-secondary mt-1">
+                  Gestión de freelancers
+                </p>
+              </div>
+            </div>
+            
+            <div class="mt-4 sm:mt-0 flex flex-col sm:flex-row gap-3">
+              <button 
+                onClick$={() => showNewProfessionalModal.value = true}
+                class="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors"
+              >
+                <LuPlus class="mr-2 h-4 w-4" />
+                Dar de Alta Profesional
+              </button>
+              
+              <button class="inline-flex items-center justify-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-text-primary dark:text-text-primary bg-white dark:bg-background-secondary hover:bg-gray-50 dark:hover:bg-background-tertiary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors">
+                <LuDownload class="mr-2 h-4 w-4" />
+                Exportar
+              </button>
+            </div>
+          </div>
+        </header>
+        
+        {/* Search and Filter Bar */}
+        <div class="mb-6">
+          <div class="flex flex-col sm:flex-row gap-4">
+            <div class="relative flex-1">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <LuSearch class="h-5 w-5 text-text-muted" />
+              </div>
+              <input
+                type="text"
+                value={searchQuery.value}
+                onInput$={(event) => {
+                  searchQuery.value = (event.target as HTMLInputElement).value;
+                  updateFilteredList();
+                }}
+                class="block w-full pl-10 pr-3 py-2 border border-border-color dark:border-gray-600 rounded-md bg-white dark:bg-background-secondary text-text-primary dark:text-text-primary placeholder-text-muted shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                placeholder="Buscar por nombre o rol..."
+              />
+            </div>
+            <div class="flex-shrink-0">
+              <button class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-text-primary dark:text-text-primary bg-white dark:bg-background-secondary hover:bg-gray-50 dark:hover:bg-background-tertiary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors">
+                <LuFilter class="mr-2 h-4 w-4" />
+                Filtrar
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        {/* Professionals Table */}
+        <div class="bg-white dark:bg-background-secondary shadow-sm rounded-lg overflow-hidden border border-border-color">
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-border-color dark:divide-gray-700">
+              <thead class="bg-background-tertiary dark:bg-background-tertiary">
+                <tr>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-text-secondary dark:text-text-secondary uppercase tracking-wider">
+                    ID
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-text-secondary dark:text-text-secondary uppercase tracking-wider">
+                    Nombre
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-text-secondary dark:text-text-secondary uppercase tracking-wider">
+                    Rol
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-text-secondary dark:text-text-secondary uppercase tracking-wider">
+                    Wallet
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-text-secondary dark:text-text-secondary uppercase tracking-wider">
+                    Contratos
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-text-secondary dark:text-text-secondary uppercase tracking-wider">
+                    Estado
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-text-secondary dark:text-text-secondary uppercase tracking-wider">
+                    Acciones
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="bg-white dark:bg-background-secondary divide-y divide-border-color dark:divide-gray-700">
+                {filteredProfessionals.value.map((prof) => (
+                  <tr key={prof.id} class="hover:bg-background-tertiary dark:hover:bg-background-tertiary transition-colors">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-text-primary dark:text-text-primary">
+                      #{prof.id.toString().padStart(3, '0')}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-text-primary dark:text-text-primary">
+                      {prof.name}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-text-secondary dark:text-text-secondary">
+                      {prof.role}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-text-secondary dark:text-text-secondary font-mono">
+                      {prof.wallet}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-text-secondary dark:text-text-secondary">
+                      {prof.contracts}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <span class={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                        prof.active 
+                          ? 'bg-success/10 text-success' 
+                          : 'bg-danger/10 text-danger'
+                      }`}>
+                        {prof.active ? 'Activo' : 'Inactivo'}
+                      </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div class="flex justify-end space-x-2">
+                        <button class="p-1 text-text-primary dark:text-text-primary hover:text-primary dark:hover:text-primary transition-colors">
+                          <LuEye class="h-5 w-5" />
+                        </button>
+                        <button class="p-1 text-text-primary dark:text-text-primary hover:text-secondary dark:hover:text-secondary transition-colors">
+                          <LuBriefcase class="h-5 w-5" />
+                        </button>
+                        <button class="p-1 text-text-primary dark:text-text-primary hover:text-warning dark:hover:text-warning transition-colors">
+                          <LuPencil class="h-5 w-5" />
+                        </button>
+                        <button class="p-1 text-text-primary dark:text-text-primary hover:text-danger dark:hover:text-danger transition-colors">
+                          <LuTrash class="h-5 w-5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {filteredProfessionals.value.length === 0 && (
+            <div class="px-6 py-8 text-center">
+              <p class="text-text-muted">No se encontraron profesionales con los criterios de búsqueda.</p>
+            </div>
+          )}
+        </div>
+        
+        {/* Pagination - Optional */}
+        <div class="flex items-center justify-between mt-6">
+          <div class="text-sm text-text-secondary dark:text-text-secondary">
+            Mostrando <span class="font-medium">{filteredProfessionals.value.length}</span> de <span class="font-medium">{professionals.value.length}</span> profesionales
+          </div>
+          <div class="flex space-x-1">
+            <button class="px-3 py-1 rounded border border-border-color dark:border-gray-600 bg-white dark:bg-background-secondary text-text-secondary dark:text-text-secondary hover:bg-background-tertiary dark:hover:bg-background-tertiary">
+              Anterior
+            </button>
+            <button class="px-3 py-1 rounded border border-primary bg-primary text-white">
+              1
+            </button>
+            <button class="px-3 py-1 rounded border border-border-color dark:border-gray-600 bg-white dark:bg-background-secondary text-text-secondary dark:text-text-secondary hover:bg-background-tertiary dark:hover:bg-background-tertiary">
+              2
+            </button>
+            <button class="px-3 py-1 rounded border border-border-color dark:border-gray-600 bg-white dark:bg-background-secondary text-text-secondary dark:text-text-secondary hover:bg-background-tertiary dark:hover:bg-background-tertiary">
+              Siguiente
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* New Professional Modal */}
+      {showNewProfessionalModal.value && (
+        <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+          <div class="flex items-end sm:items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            {/* Overlay */}
+            <div 
+              class="fixed inset-0 bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-75 transition-opacity" 
+              aria-hidden="true"
+              onClick$={() => showNewProfessionalModal.value = false}
+            ></div>
+
+            {/* Modal */}
+            <div class="inline-block align-bottom bg-white dark:bg-background-secondary rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+              <div class="px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div class="sm:flex sm:items-start">
+                  <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                    <h3 class="text-lg leading-6 font-medium text-text-primary dark:text-text-primary" id="modal-title">
+                      Dar de Alta Profesional
+                    </h3>
+                    <div class="mt-4">
+                      <form preventdefault:submit>
+                        <div class="space-y-4">
+                          {/* Name Input */}
+                          <div>
+                            <label for="name" class="block text-sm font-medium text-text-secondary dark:text-text-secondary">
+                              Nombre Completo
+                            </label>
+                            <input
+                              type="text"
+                              id="name"
+                              value={newProfessional.name}
+                              onInput$={(event) => newProfessional.name = (event.target as HTMLInputElement).value}
+                              class="mt-1 block w-full border border-border-color dark:border-gray-600 rounded-md shadow-sm py-2 px-3 bg-white dark:bg-background-tertiary text-text-primary dark:text-text-primary focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                              required
+                            />
+                          </div>
+                          
+                          {/* Role Input */}
+                          <div>
+                            <label for="role" class="block text-sm font-medium text-text-secondary dark:text-text-secondary">
+                              Rol
+                            </label>
+                            <input
+                              type="text"
+                              id="role"
+                              value={newProfessional.role}
+                              onInput$={(event) => newProfessional.role = (event.target as HTMLInputElement).value}
+                              class="mt-1 block w-full border border-border-color dark:border-gray-600 rounded-md shadow-sm py-2 px-3 bg-white dark:bg-background-tertiary text-text-primary dark:text-text-primary focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                              placeholder="Ej: Desarrollador Frontend"
+                              required
+                            />
+                          </div>
+                          
+                          {/* Description Textarea */}
+                          <div>
+                            <label for="description" class="block text-sm font-medium text-text-secondary dark:text-text-secondary">
+                              Descripción del Freelancer
+                            </label>
+                            <textarea
+                              id="description"
+                              value={newProfessional.description}
+                              onInput$={(event) => newProfessional.description = (event.target as HTMLTextAreaElement).value}
+                              rows={3}
+                              class="mt-1 block w-full border border-border-color dark:border-gray-600 rounded-md shadow-sm py-2 px-3 bg-white dark:bg-background-tertiary text-text-primary dark:text-text-primary focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                              placeholder="Habilidades, experiencia, etc."
+                            ></textarea>
+                          </div>
+                          
+                          {/* CV Upload */}
+                          <div>
+                            <label class="block text-sm font-medium text-text-secondary dark:text-text-secondary">
+                              Subir Curriculum (PDF)
+                            </label>
+                            <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed border-border-color dark:border-gray-600 rounded-md">
+                              <div class="space-y-1 text-center">
+                                <LuUpload class="mx-auto h-12 w-12 text-text-muted" />
+                                <div class="flex text-sm text-text-secondary dark:text-text-secondary">
+                                  <label for="file-upload" class="relative cursor-pointer rounded-md font-medium text-primary hover:text-primary-dark">
+                                    <span>Subir un archivo</span>
+                                    <input id="file-upload" name="file-upload" type="file" accept=".pdf" class="sr-only" />
+                                  </label>
+                                  <p class="pl-1">o arrastrar y soltar</p>
+                                </div>
+                                <p class="text-xs text-text-muted">PDF hasta 10MB</p>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* Wallet Address */}
+                          <div>
+                            <label for="wallet" class="block text-sm font-medium text-text-secondary dark:text-text-secondary">
+                              Dirección de Wallet
+                            </label>
+                            <input
+                              type="text"
+                              id="wallet"
+                              value={newProfessional.wallet}
+                              onInput$={(event) => newProfessional.wallet = (event.target as HTMLInputElement).value}
+                              class="mt-1 block w-full border border-border-color dark:border-gray-600 rounded-md shadow-sm py-2 px-3 bg-white dark:bg-background-tertiary text-text-primary dark:text-text-primary focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                              placeholder="Dirección de billetera para pagos"
+                            />
+                          </div>
+                          
+                          {/* Observations */}
+                          <div>
+                            <label for="observations" class="block text-sm font-medium text-text-secondary dark:text-text-secondary">
+                              Observaciones
+                            </label>
+                            <textarea
+                              id="observations"
+                              value={newProfessional.observations}
+                              onInput$={(event) => newProfessional.observations = (event.target as HTMLTextAreaElement).value}
+                              rows={2}
+                              class="mt-1 block w-full border border-border-color dark:border-gray-600 rounded-md shadow-sm py-2 px-3 bg-white dark:bg-background-tertiary text-text-primary dark:text-text-primary focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                              placeholder="Información adicional relevante"
+                            ></textarea>
+                          </div>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="bg-background-tertiary dark:bg-background-tertiary px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button
+                  type="button"
+                  onClick$={handleSubmit}
+                  class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary text-base font-medium text-white hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  Guardar Profesional
+                </button>
+                <button
+                  type="button"
+                  onClick$={() => showNewProfessionalModal.value = false}
+                  class="mt-3 w-full inline-flex justify-center rounded-md border border-border-color dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-background-secondary text-base font-medium text-text-primary dark:text-text-primary hover:bg-gray-50 dark:hover:bg-background-tertiary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+});

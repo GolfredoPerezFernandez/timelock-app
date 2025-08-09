@@ -1,0 +1,152 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { AutomationCompatibleInterface } from "@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
+
+interface AutomationRegistryInterface {
+    function cancelUpkeep(uint256 id) external;
+}
+
+contract TokenTimelock is AutomationCompatibleInterface, ReentrancyGuard, Ownable {
+    using SafeERC20 for IERC20;
+
+    struct LockInfo {
+        address token;
+        uint256 amount;
+        uint256 releaseTime;
+        address[] recipients;
+        uint256[] amounts;
+        bool released;
+    }
+
+    mapping(uint256 => LockInfo) public locks;
+    uint256 public nextLockId;
+    address public forwarder;
+    uint256 public upkeepId;
+    AutomationRegistryInterface public registry;
+
+    constructor(address _registry) Ownable(msg.sender) {
+        registry = AutomationRegistryInterface(_registry);
+    }
+
+    function setForwarderAddress(address _forwarder) external onlyOwner {
+        forwarder = _forwarder;
+    }
+
+    function setUpkeepId(uint256 _id) external onlyOwner {
+        upkeepId = _id;
+    }
+
+    function withdrawLink(address linkToken, address to, uint256 amount) external onlyOwner {
+        IERC20(linkToken).safeTransfer(to, amount);
+    }
+
+    function withdrawAllLink(address linkToken, address to) external onlyOwner {
+        uint256 balance = IERC20(linkToken).balanceOf(address(this));
+        require(balance > 0, "No LINK to withdraw");
+        IERC20(linkToken).safeTransfer(to, balance);
+    }
+
+    function emergencyWithdraw(address tokenAddress, address to) external onlyOwner {
+        uint256 balance = IERC20(tokenAddress).balanceOf(address(this));
+        require(balance > 0, "No tokens to withdraw");
+        IERC20(tokenAddress).safeTransfer(to, balance);
+    }
+
+    function cancelUpkeepAndWithdraw(address linkToken, address to) external onlyOwner nonReentrant {
+        require(upkeepId != 0, "Upkeep ID not set");
+        registry.cancelUpkeep(upkeepId);
+        // la cancelación tarda varios bloques en liberar fondos, pero ya se puede luego retirar manualmente desde UI
+        uint256 balance = IERC20(linkToken).balanceOf(address(this));
+        if (balance > 0) {
+            IERC20(linkToken).safeTransfer(to, balance);
+        }
+    }
+
+    /// @notice Devuelve toda la información de todos los locks existentes
+    function getAllLocks() external view returns (
+        uint256[] memory ids,
+        address[] memory tokens,
+        uint256[] memory amounts,
+        uint256[] memory releaseTimes,
+        bool[] memory released,
+        address[][] memory recipients,
+        uint256[][] memory recipientAmounts
+    ) {
+        uint256 count = nextLockId;
+        ids = new uint256[](count);
+        tokens = new address[](count);
+        amounts = new uint256[](count);
+        releaseTimes = new uint256[](count);
+        released = new bool[](count);
+        recipients = new address[][](count);
+        recipientAmounts = new uint256[][](count);
+        for (uint256 i = 0; i < count; i++) {
+            LockInfo storage info = locks[i];
+            ids[i] = i;
+            tokens[i] = info.token;
+            amounts[i] = info.amount;
+            releaseTimes[i] = info.releaseTime;
+            released[i] = info.released;
+            recipients[i] = info.recipients;
+            recipientAmounts[i] = info.amounts;
+        }
+    }
+
+    event LockCreated(uint256 lockId, address indexed token, uint256 amount, uint256 releaseTime, address[] recipients, uint256[] amounts);
+    event LockReleased(uint256 lockId);
+
+    function createLock(
+        address token,
+        uint256 totalAmount,
+        address[] calldata recipients,
+        uint256[] calldata amounts,
+        uint256 releaseTime
+    ) external nonReentrant {
+        require(block.timestamp < releaseTime, "Release time must be future");
+        require(recipients.length == amounts.length, "Arrays mismatched");
+        uint256 sum = 0;
+        for (uint i = 0; i < amounts.length; i++) {
+            sum += amounts[i];
+        }
+        require(sum > 0, "Amounts must be greater than zero");
+        require(totalAmount >= sum, "Total amount must be at least the sum of recipient amounts");
+        require(sum == totalAmount, "Amounts do not sum to total");
+        IERC20(token).safeTransferFrom(msg.sender, address(this), totalAmount);
+
+        locks[nextLockId] = LockInfo(token, totalAmount, releaseTime, recipients, amounts, false);
+        emit LockCreated(nextLockId, token, totalAmount, releaseTime, recipients, amounts);
+        nextLockId++;
+    }
+
+    // Chainlink Automation: revisa si hay locks por liberar
+    function checkUpkeep(bytes calldata /* checkData */) external view override returns (bool upkeepNeeded, bytes memory performData) {
+        upkeepNeeded = false;
+        performData = "";
+        for (uint i = 0; i < nextLockId; i++) {
+            if (!locks[i].released && block.timestamp >= locks[i].releaseTime) {
+                upkeepNeeded = true;
+                break;
+            }
+        }
+    }
+
+    // Chainlink Automation: libera los tokens automáticamente
+    function performUpkeep(bytes calldata /* performData */) external override nonReentrant {
+        // We don't use performData in this implementation. It's simply to match the interface.
+        for (uint i = 0; i < nextLockId; i++) {
+            LockInfo storage info = locks[i];
+            if (!info.released && block.timestamp >= info.releaseTime) {
+                info.released = true;
+                for (uint j = 0; j < info.recipients.length; j++) {
+                    IERC20(info.token).safeTransfer(info.recipients[j], info.amounts[j]);
+                }
+                emit LockReleased(i);
+            }
+        }
+    }
+}

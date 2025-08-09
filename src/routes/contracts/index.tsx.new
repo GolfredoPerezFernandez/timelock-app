@@ -1,0 +1,400 @@
+import { component$, useSignal, useStore, $ } from '@builder.io/qwik';
+import { routeLoader$ } from '@builder.io/qwik-city';
+import { 
+  LuBriefcase, 
+  LuSearch,
+  LuPlus,
+  LuFilter,
+  LuEye,
+  LuFileText,
+  LuDownload,
+  LuUpload
+} from '@qwikest/icons/lucide';
+
+// Definición de tipos
+interface Contract {
+  id: number;
+  professionalId: number;
+  professionalName: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+}
+
+interface Professional {
+  id: number;
+  name: string;
+  role: string;
+}
+
+// Mock data for contracts
+const mockContracts: Contract[] = [
+  { id: 1, professionalId: 3, professionalName: 'Elena Rodríguez', startDate: '2025-01-15', endDate: '2025-12-31', status: 'active' },
+  { id: 2, professionalId: 5, professionalName: 'Sofía López', startDate: '2025-02-10', endDate: '2025-08-10', status: 'active' },
+  { id: 3, professionalId: 1, professionalName: 'Ana García', startDate: '2024-11-05', endDate: '2025-11-05', status: 'active' },
+  { id: 4, professionalId: 2, professionalName: 'Carlos Méndez', startDate: '2024-09-20', endDate: '2025-09-20', status: 'active' },
+  { id: 5, professionalId: 6, professionalName: 'Miguel Fernández', startDate: '2025-03-01', endDate: '2026-03-01', status: 'active' },
+  { id: 6, professionalId: 7, professionalName: 'Laura Sánchez', startDate: '2024-10-15', endDate: '2025-10-15', status: 'active' },
+  { id: 7, professionalId: 4, professionalName: 'Javier Martínez', startDate: '2024-06-01', endDate: '2025-01-01', status: 'expired' },
+  { id: 8, professionalId: 8, professionalName: 'Daniel Torres', startDate: '2024-07-15', endDate: '2024-12-15', status: 'expired' },
+];
+
+// Mock data for professionals (for dropdown)
+const mockProfessionals: Professional[] = [
+  { id: 1, name: 'Ana García', role: 'Diseñadora UX/UI' },
+  { id: 2, name: 'Carlos Méndez', role: 'Desarrollador Frontend' },
+  { id: 3, name: 'Elena Rodríguez', role: 'Desarrolladora Backend' },
+  { id: 4, name: 'Javier Martínez', role: 'Project Manager' },
+  { id: 5, name: 'Sofía López', role: 'QA Tester' },
+  { id: 6, name: 'Miguel Fernández', role: 'DevOps Engineer' },
+  { id: 7, name: 'Laura Sánchez', role: 'Product Manager' },
+  { id: 8, name: 'Daniel Torres', role: 'SEO Specialist' },
+];
+
+export const useContractsLoader = routeLoader$(() => {
+  return mockContracts;
+});
+
+export const useProfessionalsLoader = routeLoader$(() => {
+  return mockProfessionals;
+});
+
+export default component$(() => {
+  const contracts = useContractsLoader();
+  const professionals = useProfessionalsLoader();
+  const searchQuery = useSignal('');
+  const showNewContractModal = useSignal(false);
+  const selectedProfessionalId = useSignal<number | undefined>(undefined);
+  const startDate = useSignal('');
+  const endDate = useSignal('');
+  
+  // Filtered contracts list as a signal
+  const filteredContracts = useSignal<Contract[]>(contracts.value);
+  
+  // Update filtered list when search query changes
+  const updateFilteredList = $(() => {
+    if (!searchQuery.value) {
+      filteredContracts.value = contracts.value;
+      return;
+    }
+    
+    const query = searchQuery.value.toLowerCase();
+    filteredContracts.value = contracts.value.filter(
+      contract => 
+        contract.professionalName.toLowerCase().includes(query) ||
+        contract.id.toString().includes(query)
+    );
+  });
+  
+  // Form submit handler
+  const handleSubmit = $(() => {
+    console.log('New contract for professional ID:', selectedProfessionalId.value);
+    console.log('Contract dates:', { startDate: startDate.value, endDate: endDate.value });
+    showNewContractModal.value = false;
+    selectedProfessionalId.value = undefined;
+    startDate.value = '';
+    endDate.value = '';
+    
+    // In a real app, you would call a routeAction$ here to save the data
+  });
+
+  // Format date for display
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
+  return (
+    <main class="min-h-screen bg-background-primary dark:bg-background-primary">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Header */}
+        <header class="mb-8">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex items-center">
+              <LuBriefcase class="h-8 w-8 text-secondary mr-3" />
+              <div>
+                <h1 class="text-2xl sm:text-3xl font-bold text-text-primary dark:text-text-primary">
+                  Contratos
+                </h1>
+                <p class="text-text-secondary dark:text-text-secondary mt-1">
+                  Gestión de contratos con profesionales
+                </p>
+              </div>
+            </div>
+            
+            <div class="mt-4 sm:mt-0 flex flex-col sm:flex-row gap-3">
+              <button 
+                onClick$={() => showNewContractModal.value = true}
+                class="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-secondary hover:bg-secondary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary transition-colors"
+              >
+                <LuPlus class="mr-2 h-4 w-4" />
+                Crear Contrato
+              </button>
+              
+              <button class="inline-flex items-center justify-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-text-primary dark:text-text-primary bg-white dark:bg-background-secondary hover:bg-gray-50 dark:hover:bg-background-tertiary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors">
+                <LuDownload class="mr-2 h-4 w-4" />
+                Exportar
+              </button>
+            </div>
+          </div>
+        </header>
+        
+        {/* Search and Filter Bar */}
+        <div class="mb-6">
+          <div class="flex flex-col sm:flex-row gap-4">
+            <div class="relative flex-1">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <LuSearch class="h-5 w-5 text-text-muted" />
+              </div>
+              <input
+                type="text"
+                value={searchQuery.value}
+                onInput$={(event) => {
+                  searchQuery.value = (event.target as HTMLInputElement).value;
+                  updateFilteredList();
+                }}
+                class="block w-full pl-10 pr-3 py-2 border border-border-color dark:border-gray-600 rounded-md bg-white dark:bg-background-secondary text-text-primary dark:text-text-primary placeholder-text-muted shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                placeholder="Buscar por profesional o ID..."
+              />
+            </div>
+            <div class="flex-shrink-0">
+              <button class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-text-primary dark:text-text-primary bg-white dark:bg-background-secondary hover:bg-gray-50 dark:hover:bg-background-tertiary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors">
+                <LuFilter class="mr-2 h-4 w-4" />
+                Filtrar
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        {/* Contracts Table */}
+        <div class="bg-white dark:bg-background-secondary shadow-sm rounded-lg overflow-hidden border border-border-color">
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-border-color dark:divide-gray-700">
+              <thead class="bg-background-tertiary dark:bg-background-tertiary">
+                <tr>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-text-secondary dark:text-text-secondary uppercase tracking-wider">
+                    ID
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-text-secondary dark:text-text-secondary uppercase tracking-wider">
+                    Profesional
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-text-secondary dark:text-text-secondary uppercase tracking-wider">
+                    Fecha Inicio
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-text-secondary dark:text-text-secondary uppercase tracking-wider">
+                    Fecha Fin
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-text-secondary dark:text-text-secondary uppercase tracking-wider">
+                    Estado
+                  </th>
+                  <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-text-secondary dark:text-text-secondary uppercase tracking-wider">
+                    Acciones
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="bg-white dark:bg-background-secondary divide-y divide-border-color dark:divide-gray-700">
+                {filteredContracts.value.map((contract) => (
+                  <tr key={contract.id} class="hover:bg-background-tertiary dark:hover:bg-background-tertiary transition-colors">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-text-primary dark:text-text-primary">
+                      #CONT-{contract.id.toString().padStart(3, '0')}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-text-primary dark:text-text-primary">
+                      {contract.professionalName}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-text-secondary dark:text-text-secondary">
+                      {formatDate(contract.startDate)}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-text-secondary dark:text-text-secondary">
+                      {formatDate(contract.endDate)}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                      <span class={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                        contract.status === 'active' 
+                          ? 'bg-success/10 text-success' 
+                          : 'bg-danger/10 text-danger'
+                      }`}>
+                        {contract.status === 'active' ? 'Activo' : 'Expirado'}
+                      </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div class="flex justify-end space-x-2">
+                        <button class="p-1 text-text-primary dark:text-text-primary hover:text-secondary dark:hover:text-secondary transition-colors">
+                          <LuEye class="h-5 w-5" title="Ver Contrato" />
+                        </button>
+                        <button class="p-1 text-text-primary dark:text-text-primary hover:text-primary dark:hover:text-primary transition-colors">
+                          <LuFileText class="h-5 w-5" title="Ver Facturas" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {filteredContracts.value.length === 0 && (
+            <div class="px-6 py-8 text-center">
+              <p class="text-text-muted">No se encontraron contratos con los criterios de búsqueda.</p>
+            </div>
+          )}
+        </div>
+        
+        {/* Pagination - Optional */}
+        <div class="flex items-center justify-between mt-6">
+          <div class="text-sm text-text-secondary dark:text-text-secondary">
+            Mostrando <span class="font-medium">{filteredContracts.value.length}</span> de <span class="font-medium">{contracts.value.length}</span> contratos
+          </div>
+          <div class="flex space-x-1">
+            <button class="px-3 py-1 rounded border border-border-color dark:border-gray-600 bg-white dark:bg-background-secondary text-text-secondary dark:text-text-secondary hover:bg-background-tertiary dark:hover:bg-background-tertiary">
+              Anterior
+            </button>
+            <button class="px-3 py-1 rounded border border-primary bg-primary text-white">
+              1
+            </button>
+            <button class="px-3 py-1 rounded border border-border-color dark:border-gray-600 bg-white dark:bg-background-secondary text-text-secondary dark:text-text-secondary hover:bg-background-tertiary dark:hover:bg-background-tertiary">
+              2
+            </button>
+            <button class="px-3 py-1 rounded border border-border-color dark:border-gray-600 bg-white dark:bg-background-secondary text-text-secondary dark:text-text-secondary hover:bg-background-tertiary dark:hover:bg-background-tertiary">
+              Siguiente
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* New Contract Modal */}
+      {showNewContractModal.value && (
+        <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+          <div class="flex items-end sm:items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            {/* Overlay */}
+            <div 
+              class="fixed inset-0 bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-75 transition-opacity" 
+              aria-hidden="true"
+              onClick$={() => showNewContractModal.value = false}
+            ></div>
+
+            {/* Modal */}
+            <div class="inline-block align-bottom bg-white dark:bg-background-secondary rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+              <div class="px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div class="sm:flex sm:items-start">
+                  <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                    <h3 class="text-lg leading-6 font-medium text-text-primary dark:text-text-primary" id="modal-title">
+                      Crear Nuevo Contrato
+                    </h3>
+                    <div class="mt-4">
+                      <form preventdefault:submit>
+                        <div class="space-y-4">
+                          {/* Professional Select */}
+                          <div>
+                            <label for="professional" class="block text-sm font-medium text-text-secondary dark:text-text-secondary">
+                              Profesional
+                            </label>
+                            <select
+                              id="professional"
+                              value={selectedProfessionalId.value}
+                              onChange$={(e) => {
+                                const value = (e.target as HTMLSelectElement).value;
+                                selectedProfessionalId.value = value ? parseInt(value, 10) : undefined;
+                              }}
+                              class="mt-1 block w-full pl-3 pr-10 py-2 text-base border border-border-color dark:border-gray-600 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md bg-white dark:bg-background-tertiary text-text-primary dark:text-text-primary"
+                              required
+                            >
+                              <option value="">Seleccionar profesional</option>
+                              {professionals.value.map((prof) => (
+                                <option key={prof.id} value={prof.id}>
+                                  {prof.name} - {prof.role}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          
+                          {/* Contract Upload */}
+                          <div>
+                            <label class="block text-sm font-medium text-text-secondary dark:text-text-secondary">
+                              Subir Contrato (PDF)
+                            </label>
+                            <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed border-border-color dark:border-gray-600 rounded-md">
+                              <div class="space-y-1 text-center">
+                                <LuUpload class="mx-auto h-12 w-12 text-text-muted" />
+                                <div class="flex text-sm text-text-muted">
+                                  <label for="contract-upload" class="relative cursor-pointer bg-white dark:bg-background-tertiary rounded-md font-medium text-primary hover:text-primary-dark focus:outline-none">
+                                    <span>Subir un archivo</span>
+                                    <input id="contract-upload" name="contract-upload" type="file" accept=".pdf" class="sr-only" />
+                                  </label>
+                                  <p class="pl-1">o arrastrar y soltar</p>
+                                </div>
+                                <p class="text-xs text-text-muted">PDF hasta 10MB</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Date Fields */}
+                          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div>
+                              <label for="start-date" class="block text-sm font-medium text-text-secondary dark:text-text-secondary">
+                                Fecha de Inicio
+                              </label>
+                              <input
+                                type="date"
+                                id="start-date"
+                                value={startDate.value}
+                                onInput$={(event) => startDate.value = (event.target as HTMLInputElement).value}
+                                class="mt-1 block w-full border border-border-color dark:border-gray-600 rounded-md shadow-sm py-2 px-3 bg-white dark:bg-background-tertiary text-text-primary dark:text-text-primary focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label for="end-date" class="block text-sm font-medium text-text-secondary dark:text-text-secondary">
+                                Fecha de Fin
+                              </label>
+                              <input
+                                type="date"
+                                id="end-date"
+                                value={endDate.value}
+                                onInput$={(event) => endDate.value = (event.target as HTMLInputElement).value}
+                                class="mt-1 block w-full border border-border-color dark:border-gray-600 rounded-md shadow-sm py-2 px-3 bg-white dark:bg-background-tertiary text-text-primary dark:text-text-primary focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                                required
+                              />
+                            </div>
+                          </div>
+                          
+                          {/* Preview */}
+                          <div class="mt-6">
+                            <h4 class="text-sm font-medium text-text-secondary dark:text-text-secondary">
+                              Vista previa del contrato
+                            </h4>
+                            <div class="mt-2 border border-border-color dark:border-gray-600 rounded-md h-48 bg-background-tertiary dark:bg-background-tertiary flex items-center justify-center text-text-muted">
+                              <p>No hay ningún archivo seleccionado</p>
+                            </div>
+                          </div>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="bg-background-tertiary dark:bg-background-tertiary px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button
+                  type="button"
+                  onClick$={handleSubmit}
+                  class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-secondary text-base font-medium text-white hover:bg-secondary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  Guardar Contrato
+                </button>
+                <button
+                  type="button"
+                  onClick$={() => showNewContractModal.value = false}
+                  class="mt-3 w-full inline-flex justify-center rounded-md border border-border-color dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-background-secondary text-base font-medium text-text-primary dark:text-text-primary hover:bg-gray-50 dark:hover:bg-background-tertiary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+});

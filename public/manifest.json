@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/web-manifest-combined.json",
+  "name": "SaveeTimeLock",
+  "short_name": "SaveeTimeLock",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#fff",
+  "theme_color": "#0f766e",
+  "description": "SaveeTimeLock - Professional Freelance Management",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot.png",
+      "type": "image/png",
+      "sizes": "862x568"
+    },
+    {
+      "src": "/screenshot.png",
+      "type": "image/png",
+      "sizes": "862x568",
+      "form_factor": "wide"
+    }
+  ]
+}

@@ -1,0 +1,192 @@
+/* TimeLock - Elegant & Professional Theme Colors */
+:root {
+  /* Main Palette - Modern, Elegant & Sophisticated */
+  --fh-slate: #475569; /* Primary - Refined Slate */
+  --fh-slate-light: #64748b;
+  --fh-slate-dark: #334155;
+  --fh-teal: #0d9488; /* Secondary - Rich Teal */
+  --fh-teal-light: #14b8a6;
+  --fh-teal-dark: #0f766e;
+  --fh-emerald: #047857; /* Success - Vibrant Emerald */
+  --fh-emerald-light: #10b981;
+  --fh-emerald-dark: #065f46;
+  --fh-amber: #d97706; /* Warning - Refined Amber */
+  --fh-amber-light: #f59e0b;
+  --fh-amber-dark: #b45309;
+  --fh-rose: #be123c; /* Danger - Elegant Rose */
+  --fh-rose-light: #e11d48;
+  --fh-rose-dark: #9f1239;
+  --fh-indigo: #4f46e5; /* Accent - Deep Indigo */
+  --fh-indigo-light: #6366f1;
+  --fh-indigo-dark: #4338ca;
+  --fh-white: #ffffff;
+  --fh-gray-50: #f8fafc;
+  --fh-gray-100: #f1f5f9;
+  --fh-gray-200: #e2e8f0;
+  --fh-gray-300: #cbd5e1;
+  --fh-gray-700: #334155;
+  --fh-gray-900: #0f172a;
+
+  /* Light Theme Variables - Elegant & Refined */
+  --primary: var(--fh-slate);
+  --secondary: var(--fh-teal);
+  --accent: var(--fh-indigo);
+  --success: var(--fh-emerald);
+  --info: var(--fh-slate-light);
+  --warning: var(--fh-amber);
+  --danger: var(--fh-rose);
+  
+  --background-primary: var(--fh-gray-50);
+  --background-secondary: var(--fh-white);
+  --background-tertiary: var(--fh-gray-100);
+  --text-primary: var(--fh-gray-900);
+  --text-secondary: var(--fh-gray-700);
+  --text-muted: var(--fh-slate-light);
+  --border-color: var(--fh-gray-200);
+  --card-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+
+  /* Elegant Gradients */
+  --gradient-primary: linear-gradient(135deg, var(--fh-slate-dark) 0%, var(--fh-slate) 100%);
+  --gradient-secondary: linear-gradient(135deg, var(--fh-teal-dark) 0%, var(--fh-teal) 100%);
+  --gradient-accent: linear-gradient(135deg, var(--fh-indigo-dark) 0%, var(--fh-indigo) 100%);
+  --gradient-success: linear-gradient(135deg, var(--fh-emerald-dark) 0%, var(--fh-emerald) 100%);
+  --gradient-warning: linear-gradient(135deg, var(--fh-amber-dark) 0%, var(--fh-amber) 100%);
+  --gradient-danger: linear-gradient(135deg, var(--fh-rose-dark) 0%, var(--fh-rose) 100%);
+  --gradient-elegant: linear-gradient(135deg, var(--fh-slate-dark) 0%, var(--fh-teal-dark) 100%);
+  --gradient-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.7) 100%);
+}
+
+/* Dark Theme Variables - Elegant & Refined */
+.dark {
+  --primary: var(--fh-teal-light);
+  --secondary: var(--fh-slate-light);
+  --accent: var(--fh-indigo-light);
+  --success: var(--fh-emerald-light);
+  --warning: var(--fh-amber-light);
+  --danger: var(--fh-rose-light);
+  
+  --background-primary: #0F172A; /* Deep blue-black */
+  --background-secondary: #1E293B; /* Rich slate */
+  --background-tertiary: #334155; /* Medium slate */
+  --text-primary: #F8FAFC; /* Bright white */
+  --text-secondary: #E2E8F0; /* Light gray */
+  --text-muted: #94A3B8; /* Medium gray */
+  --border-color: #334155; /* Medium slate */
+  --card-shadow: 0 12px 24px rgba(0,0,0,0.3);
+  
+  /* Dark Theme Gradients */
+  --gradient-glass: linear-gradient(135deg, rgba(30, 41, 59, 0.85) 0%, rgba(15, 23, 42, 0.75) 100%);
+}
+
+/* Utilidades para colores */
+.bg-primary { background-color: var(--primary); }
+.bg-secondary { background-color: var(--secondary); }
+.bg-accent { background-color: var(--accent); }
+.bg-success { background-color: var(--success); }
+.bg-info { background-color: var(--info); }
+.bg-warning { background-color: var(--warning); }
+.bg-danger { background-color: var(--danger); }
+
+.text-primary { color: var(--primary); }
+.text-secondary { color: var(--secondary); }
+.text-accent { color: var(--accent); }
+.text-success { color: var(--success); }
+.text-info { color: var(--info); }
+.text-warning { color: var(--warning); }
+.text-danger { color: var(--danger); }
+
+/* Smooth Animations */
+@keyframes float {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(5px, -15px); }
+  50% { transform: translate(10px, 0); }
+  75% { transform: translate(5px, 15px); }
+  100% { transform: translate(0, 0); }
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes fadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* Glass Effect Utilities */
+.glass {
+  background: var(--gradient-glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Elegant Shadows */
+.shadow-elegant {
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.05);
+}
+
+.shadow-elegant-sm {
+  box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.1), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
+}
+
+.shadow-elegant-lg {
+  box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.05);
+}
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.8; }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes gradient-x {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-gradient-x {
+  background-size: 200% 200%;
+  animation: gradient-x 3s ease infinite;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+
+/* Gradientes Temáticos */
+.bg-gradient-moa {
+  background: var(--gradient-primary);
+}
+
+.bg-gradient-expedition {
+  background: var(--gradient-mountains);
+}
+
+.bg-mountains {
+  background-color: var(--secondary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320'%3E%3Cpath fill='%232EB670' fill-opacity='0.4' d='M0,224L48,213.3C96,203,192,181,288,181.3C384,181,480,203,576,202.7C672,203,768,181,864,181.3C960,181,1056,203,1152,208C1248,213,1344,203,1392,197.3L1440,192L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z'%3E%3C/path%3E%3Cpath fill='%23F4D942' fill-opacity='0.3' d='M0,288L48,272C96,256,192,224,288,213.3C384,203,480,213,576,229.3C672,245,768,267,864,261.3C960,256,1056,224,1152,213.3C1248,203,1344,213,1392,218.7L1440,224L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z'%3E%3C/path%3E%3C/svg%3E");
+  background-size: cover;
+  background-position: center bottom;
+}
+
+body {
+  background: var(--af-beige);
+  color: var(--af-black);
+}
