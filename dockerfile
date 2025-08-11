@@ -37,7 +37,7 @@ FROM base as final
  
 # Use production node environment by default.
 ENV NODE_ENV production
-ENV ORIGIN https://timelock.fly.dev/
+ENV ORIGIN https://saveetimelock-knrt.fly.dev/
  
 # Run the application as a non-root user.
 USER node

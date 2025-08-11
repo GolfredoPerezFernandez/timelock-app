@@ -170,7 +170,6 @@ export default component$(() => {
   return (
     <main class="min-h-screen bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex flex-col items-center justify-center">
       <header class="w-full flex flex-col items-center py-8 mb-2">
-        <img src="/logo.png" alt="Logo SaveeTimelock" class="w-20 h-20 mb-2 drop-shadow-xl animate-pop" />
         <h1 class="text-3xl md:text-4xl font-extrabold text-slate-700 dark:text-teal-400 mb-2 flex items-center gap-2 animate-slide-down">
           <span role="img" aria-label="clock">⏱️</span> Welcome to SaveeTimelock
         </h1>

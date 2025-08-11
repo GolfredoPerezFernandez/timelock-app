@@ -1,0 +1,20 @@
+// Lista de zonas horarias comunes para selección en el frontend
+export const TIMEZONES = [
+  'UTC',
+  'America/Mexico_City',
+  'America/Caracas',
+  'America/Bogota',
+  'America/Argentina/Buenos_Aires',
+  'America/Santiago',
+  'America/Lima',
+  'America/New_York',
+  'America/Los_Angeles',
+  'Europe/Madrid',
+  'Europe/London',
+  'Europe/Berlin',
+  'Europe/Paris',
+  'Asia/Tokyo',
+  'Asia/Shanghai',
+  'Asia/Kolkata',
+  'Australia/Sydney',
+];

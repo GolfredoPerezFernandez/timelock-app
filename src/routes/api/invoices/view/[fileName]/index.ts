@@ -37,7 +37,9 @@ export const onGet: RequestHandler = async (requestEvent) => {
     // Use 'inline' to display in browser, 'attachment' to force download
     headers.set('Content-Disposition', `inline; filename="${fileName}"`);
 
-    requestEvent.send(fileBuffer);
+  // Create a Response object with the buffer and headers
+  const response = new Response(new Uint8Array(fileBuffer), { headers });
+  requestEvent.send(response);
 
   } catch (e) {
     console.error('File serving failed:', e);

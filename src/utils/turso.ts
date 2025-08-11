@@ -182,6 +182,9 @@ export async function runMigrations(requestEvent: RequestEventBase): Promise<voi
       FOREIGN KEY (invoice_id) REFERENCES invoices(id)
   );`);
 
+  // Asegura columna contract_id (por si la tabla ya existía sin ella)
+  try { await client.execute(`ALTER TABLE payments ADD COLUMN contract_id INTEGER;`); } catch (e: any) { if (!String(e.message).toLowerCase().includes("duplicate column name")) throw e; }
+
   // TIMELOCKS TABLE (for blockchain timelock payments)
   await client.execute(`CREATE TABLE IF NOT EXISTS timelocks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

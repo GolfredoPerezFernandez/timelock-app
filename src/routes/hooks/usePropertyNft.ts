@@ -1,4 +1,4 @@
-import { useSignal, $ } from "@builder.io/qwik";
+import { useSignal, $, isBrowser } from "@builder.io/qwik";
 import { createWalletClient, createPublicClient, custom, http, formatUnits, parseUnits } from "viem";
 import { timelock_abi } from "~/utils/TimelockABI";
 import { base } from "viem/chains";
@@ -26,6 +26,10 @@ export function useTimelock() {
 
   // Conectar wallet y clientes viem
   const connect = $(async () => {
+    if (!isBrowser) {
+        error.value = "MetaMask solo se puede usar en el navegador.";
+        return false;
+    }
     // Resetear los mensajes de error y estado primero
     error.value = "";
     status.value = "Conectando con MetaMask...";
@@ -108,6 +112,10 @@ export function useTimelock() {
 
   // Crear lock
   const createLock = $(async (token: string, totalAmount: string, recipients: string, amounts: string, releaseTime: string) => {
+    if (!isBrowser) {
+        error.value = "Esta acción solo se puede realizar en el navegador.";
+        return;
+    }
     // Resetear mensajes
     error.value = "";
     status.value = "Procesando operación...";
@@ -131,6 +139,7 @@ export function useTimelock() {
     
     // Validar parámetros
     try {
+      console.log('[timelock.createLock] params:', { token, totalAmount, recipients, amounts, releaseTime });
       if (!token || !totalAmount || !recipients || !amounts || !releaseTime) {
         error.value = "Completa todos los campos";
         status.value = "";
@@ -155,8 +164,11 @@ export function useTimelock() {
       // Verificar timestamp futuro
       const now = Math.floor(Date.now() / 1000);
       const relTime = Number(releaseTime);
+      console.log('[timelock.createLock] now:', now, 'relTime:', relTime);
       if (relTime <= now) {
-        error.value = "releaseTime debe ser futuro (timestamp unix)";
+        // CORRECCIÓN: Mensaje de error mejorado para el usuario.
+        const releaseDate = new Date(relTime * 1000).toLocaleString();
+        error.value = `La fecha de liberación (${releaseDate}) debe ser una fecha futura.`;
         status.value = "";
         return;
       }
@@ -235,8 +247,7 @@ export function useTimelock() {
       status.value = "Lock creado correctamente";
       error.value = "";
       
-      // Cargar los locks actualizados
-      await loadLocks();
+  // No llamar a loadLocks aquí, refrescar desde el componente principal si es necesario
     } catch (e: any) {
       console.error("Error al crear lock:", e);
       
@@ -303,6 +314,10 @@ export function useTimelock() {
 
   // Liberar manualmente
   const performUpkeep = $(async () => {
+    if (!isBrowser) {
+        error.value = "Esta acción solo se puede realizar en el navegador.";
+        return;
+    }
     if (!address.value) return error.value = "Conecta MetaMask primero";
     try {
       const walletClient = createWalletClient({

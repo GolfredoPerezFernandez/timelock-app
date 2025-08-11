@@ -1,8 +1,12 @@
-import { component$, useSignal, $, useStore, useVisibleTask$, useTask$ } from '@builder.io/qwik';
+
+
+import { component$, useSignal, $, useStore, useVisibleTask$, useTask$, isBrowser } from '@builder.io/qwik';
 import { routeLoader$, routeAction$, Form, zod$, z } from '@builder.io/qwik-city';
 import { tursoClient, runMigrations } from '~/utils/turso';
 import { getSession } from '~/utils/auth';
-import { formatCurrency } from '~/utils/format';
+import { formatCurrency, to12Hour, to24Hour } from '~/utils/format';
+import { DateTime } from 'luxon';
+import { TIMEZONES } from '~/utils/timezones';
 import { useTimelock } from '../hooks/usePropertyNft';
 import { ENV } from '~/utils/env';
 import { 
@@ -31,12 +35,14 @@ interface Payment {
   id: number;
   professional_id: number;
   professional_name: string;
-  professional_wallet: string | null;  // Añadimos la wallet del profesional
+  professional_wallet: string | null;
   amount: number;
   currency: string;
   status: 'pending' | 'paid';
   due_date: string;
   description: string | null;
+  contract_id?: number | null;
+  contract_name?: string | null;
 }
 
 interface Professional {
@@ -63,9 +69,10 @@ export const usePaymentsLoader = routeLoader$(async (requestEvent) => {
   const paymentsResult = await db.execute({
     sql: `
       SELECT p.id, p.professional_id, prof.name as professional_name, prof.wallet as professional_wallet,
-             p.amount, p.currency, p.status, p.due_date, p.description
+             p.amount, p.currency, p.status, p.due_date, p.description, p.contract_id, c.id as contract_id, c.start_date, c.end_date, c.status as contract_status, c.contract_url
       FROM payments p
       JOIN professionals prof ON p.professional_id = prof.id
+      LEFT JOIN contracts c ON p.contract_id = c.id
       WHERE p.due_date BETWEEN ? AND ?
       ORDER BY p.due_date ASC
     `,
@@ -74,9 +81,18 @@ export const usePaymentsLoader = routeLoader$(async (requestEvent) => {
 
   const professionalsResult = await db.execute('SELECT id, name, wallet FROM professionals ORDER BY name');
 
+  // Cargar todos los contratos activos
+  const contractsResult = await db.execute(`
+    SELECT c.id, c.professional_id, c.start_date, c.end_date, c.status, c.contract_url
+    FROM contracts c
+    WHERE c.status = 'active'
+    ORDER BY c.start_date DESC
+  `);
+
   return {
     payments: (paymentsResult.rows as any[]).map(r => ({...r, amount: Number(r.amount)})) as Payment[],
     professionals: professionalsResult.rows as unknown as Professional[],
+    contracts: contractsResult.rows as any[],
     currentMonth: Number(month),
     currentYear: Number(year)
   };
@@ -99,11 +115,13 @@ export const useSavePayment = routeAction$(
       currency, 
       due_date, 
       description, 
+      contract_id,
       autoSchedulePayment,
       autoScheduleTime,
       customDate,
       customHour,
-      customMinute
+  customMinute,
+  timezone
     } = data;
 
     try {
@@ -137,43 +155,38 @@ export const useSavePayment = routeAction$(
           const now = Math.floor(Date.now() / 1000); // Timestamp actual en segundos
           let releaseTimestamp: number;
           let releaseDescription: string;
+          // Crear fecha en la zona horaria seleccionada usando luxon
+          const dateParts = due_date.split('-').map(Number); // [YYYY, MM, DD]
+          let customHourVal = typeof customHour === 'string' ? parseInt(customHour, 10) : 0;
+          const customMinuteVal = typeof customMinute === 'string' ? parseInt(customMinute, 10) : 0;
+          let amPmVal = data.amPm || null;
+          if (amPmVal) {
+            customHourVal = to24Hour(customHourVal, amPmVal);
+          }
+          // Usar luxon para crear la fecha en la zona horaria seleccionada
+          const dt = DateTime.fromObject({
+            year: dateParts[0],
+            month: dateParts[1],
+            day: dateParts[2],
+            hour: customHourVal,
+            minute: customMinuteVal,
+            second: 0,
+            millisecond: 0
+          }, { zone: timezone || 'UTC' });
+          releaseTimestamp = Math.floor(dt.toUTC().toSeconds());
+          releaseDescription = `fecha de vencimiento (${dt.toFormat('yyyy-MM-dd HH:mm')} [${timezone || 'UTC'}] | UTC: ${dt.toUTC().toFormat('yyyy-MM-dd HH:mm')})`;
           
+          // Mantener estos casos para compatibilidad con código existente
           switch (autoScheduleTime) {
-            case '30min':
-              releaseTimestamp = now + (30 * 60); // 30 minutos
-              releaseDescription = "30 minutos";
-              break;
-            case '1h':
-              releaseTimestamp = now + (60 * 60); // 1 hora
-              releaseDescription = "1 hora";
-              break;
-            case '1d':
-              releaseTimestamp = now + (24 * 60 * 60); // 1 día
-              releaseDescription = "1 día";
-              break;
-            case '1w':
-              releaseTimestamp = now + (7 * 24 * 60 * 60); // 1 semana
-              releaseDescription = "1 semana";
-              break;
             case 'duedate':
-              // Convertir la fecha de vencimiento a timestamp
-              releaseTimestamp = Math.floor(new Date(due_date).getTime() / 1000);
-              releaseDescription = `fecha de vencimiento (${new Date(due_date).toLocaleDateString()})`;
-              break;
             case 'custom':
-              // Usar la fecha y hora personalizadas
-              const customDateStr = typeof customDate === 'string' ? customDate : new Date().toISOString().split('T')[0];
-              const customHourVal = typeof customHour === 'string' ? parseInt(customHour, 10) : 0;
-              const customMinuteVal = typeof customMinute === 'string' ? parseInt(customMinute, 10) : 0;
-              
-              const customDateObj = new Date(customDateStr);
-              customDateObj.setHours(customHourVal, customMinuteVal, 0, 0);
-              releaseTimestamp = Math.floor(customDateObj.getTime() / 1000);
-              releaseDescription = `fecha personalizada (${customDateObj.toLocaleString()})`;
+            case '30min':
+            case '1h':
+            case '1d':
+            case '1w':
               break;
             default:
-              releaseTimestamp = now + (30 * 60); // Por defecto, 30 minutos
-              releaseDescription = "30 minutos (predeterminado)";
+              console.log("Usando la fecha de vencimiento con la hora seleccionada por defecto");
           }
           
           // Obtener la dirección del token según la moneda
@@ -222,13 +235,13 @@ export const useSavePayment = routeAction$(
         // Si no hay automatización, simplemente guardamos el pago si es nuevo o actualizamos
         if (id) {
           await db.execute({
-            sql: 'UPDATE payments SET professional_id = ?, amount = ?, currency = ?, due_date = ?, description = ? WHERE id = ?',
-            args: [professional_id, amount, currency, due_date, description || null, id]
+            sql: 'UPDATE payments SET professional_id = ?, amount = ?, currency = ?, due_date = ?, description = ?, contract_id = ? WHERE id = ?',
+            args: [professional_id, amount, currency, due_date, description || null, contract_id || null, id]
           });
         } else {
           await db.execute({
-            sql: 'INSERT INTO payments (professional_id, user_id, amount, currency, status, due_date, description) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            args: [professional_id, session.userId, amount, currency, 'pending', due_date, description || null]
+            sql: 'INSERT INTO payments (professional_id, user_id, amount, currency, status, due_date, description, contract_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            args: [professional_id, session.userId, amount, currency, 'pending', due_date, description || null, contract_id || null]
           });
         }
         return { success: true };
@@ -245,11 +258,14 @@ export const useSavePayment = routeAction$(
     currency: z.string(),
     due_date: z.string(),
     description: z.string().optional(),
+    contract_id: z.coerce.number().optional().nullable(),
     autoSchedulePayment: z.string().optional(),
     autoScheduleTime: z.string().optional(),
     customDate: z.string().optional(),
     customHour: z.string().optional(),
-    customMinute: z.string().optional()
+    customMinute: z.string().optional(),
+  amPm: z.string().optional(),
+  timezone: z.string().optional()
   })
 );
 
@@ -283,6 +299,11 @@ export const useUpdateTimelockTransaction = routeAction$(async ({ payment_id, tx
   const db = tursoClient(requestEvent);
   
   try {
+    // Si el payment_id es null o no es un número válido, no podemos proceder
+    if (payment_id === null || isNaN(Number(payment_id))) {
+      return { success: false, error: 'ID de pago no válido' };
+    }
+
     await db.execute({
       sql: 'UPDATE timelocks SET tx_hash = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE payment_id = ?',
       args: [tx_hash, status, payment_id]
@@ -302,7 +323,7 @@ export const useUpdateTimelockTransaction = routeAction$(async ({ payment_id, tx
     return { success: false, error: 'Failed to update timelock transaction.' };
   }
 }, zod$({
-  payment_id: z.coerce.number(),
+  payment_id: z.coerce.number().nullable(), // Ahora permitimos null para compatibilidad
   tx_hash: z.string(),
   status: z.enum(['pending', 'completed', 'failed'])
 }));
@@ -350,14 +371,31 @@ function getTokenAddress(currency: string): `0x${string}` | undefined {
 }
 
 export default component$(() => {
+
+
   const loaderData = usePaymentsLoader();
   const saveAction = useSavePayment();
   const processAction = useProcessPayment();
   const deleteAction = useDeletePayment();
   const updateTimelockAction = useUpdateTimelockTransaction();
-  
+
   // Timelock Integration
+  // Hook para la integración con Timelock/MetaMask
   const timelock = useTimelock();
+
+  // Tarea visible para verificar MetaMask en el lado del cliente
+  useVisibleTask$(async ({ track }) => {
+    if (!isBrowser) return;
+    try {
+      // Rastreamos si hay algún cambio en el estado de MetaMask
+      const currentAddress = track(() => timelock.address.value);
+      
+      // Si MetaMask está instalado pero no estamos conectados, intentar verificar cuentas existentes
+      // Esta lógica solo se ejecuta en el cliente
+    } catch (error) {
+      console.error("Error en la tarea visible de MetaMask:", error);
+    }
+  });
   
   // Señal para mostrar/ocultar el panel de timelock
   const showTimelockPanel = useSignal(false);
@@ -380,12 +418,39 @@ export default component$(() => {
   const customHour = useSignal<number>(0); // 0-23
   const customMinute = useSignal<number>(30); // 0-59 (mínimo 30)
   const showCustomDatePicker = useSignal(false); // Mostrar selector personalizado
+
+  // Señal para la zona horaria seleccionada
+  const selectedTimezone = useSignal<string>('UTC');
+  // Señal para el reloj en tiempo real
+  const nowDate = useSignal<Date>(new Date());
+  // Señal para la fecha/hora UTC seleccionada
+  const selectedUtcDate = useSignal<Date | null>(null);
+  // Señal para error de validación UTC
+  const utcError = useSignal<string | null>(null);
+  // Actualizar el reloj cada segundo
+  useVisibleTask$(() => {
+    const interval = setInterval(() => {
+      nowDate.value = new Date();
+      // Si hay una fecha seleccionada, validar en UTC
+      if (selectedUtcDate.value) {
+        if (selectedUtcDate.value.getTime() <= Date.now()) {
+          utcError.value = 'La fecha/hora seleccionada en UTC ya pasó. Elige una hora mayor.';
+        } else {
+          utcError.value = null;
+        }
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  });
+
+  // Obtener zona horaria local
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   
   // Store para guardar los datos del pago que requiere acción blockchain
   const pendingBlockchainAction = useStore({
     pending: false,
     processed: false, // Nuevo flag para evitar re-ejecución
-    payment_id: 0,
+    payment_id: 0 as number | null,
     professional_wallet: '',
     amount: 0,
     currency: '',
@@ -393,8 +458,14 @@ export default component$(() => {
     releaseTimestamp: 0
   });
   
+  // Señal para formato de hora (24h o 12h)
+  const timeFormat = useSignal<'24h' | '12h'>('24h');
+  // Señal para AM/PM si está en 12h
+  const amPm = useSignal<'AM' | 'PM'>('AM');
+
   // Task para monitorear los resultados de la acción de guardar y ejecutar MetaMask cuando sea necesario
-  useTask$(({ track }) => {
+  useVisibleTask$(({ track }) => {
+    if (!isBrowser) return;
     const result = track(() => saveAction.value);
     
     if (result && result.needsBlockchainAction && !pendingBlockchainAction.processed) {
@@ -446,36 +517,15 @@ export default component$(() => {
             pendingBlockchainAction.releaseTimestamp.toString()
           );
 
-          // Si la transacción fue exitosa, guardar el pago y el timelock en la base de datos
-          // Llamar a una acción del servidor para guardar el pago y el timelock
-          if (result.paymentData) {
-            // Llamar a una nueva acción para guardar el pago y el timelock
-            const saveRes = await fetch('/api/save-payment-timelock', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                ...result.paymentData,
-                status: 'pending',
-                timelock: {
-                  release_timestamp: result.releaseTimestamp
-                }
-              })
-            });
-            const saveJson = await saveRes.json();
-            if (!saveJson.success) {
-              timelock.error.value = saveJson.error || 'Error al guardar el pago en la base de datos tras MetaMask';
-              pendingBlockchainAction.pending = false;
-              return;
-            }
-            // Actualizar el payment_id con el generado
-            pendingBlockchainAction.payment_id = saveJson.payment_id;
-          }
+       
 
         } catch (error) {
-          console.error("Error al conectar con MetaMask:", error);
-          timelock.error.value = error instanceof Error 
-            ? `Error al conectar con MetaMask: ${error.message}`
-            : "Error desconocido al conectar con MetaMask. Por favor, intenta de nuevo.";
+          console.error("Error durante el proceso de blockchain:", error);
+          if (!timelock.error.value) {
+              timelock.error.value = error instanceof Error 
+                ? `Error en la transacción: ${error.message}`
+                : "Error desconocido durante la transacción. Por favor, intenta de nuevo.";
+          }
           pendingBlockchainAction.pending = false; // Resetear en caso de error
         }
       })();
@@ -484,6 +534,7 @@ export default component$(() => {
   
   // Task para monitorear el estado de la transacción blockchain
   useTask$(({ track }) => {
+    if (!isBrowser) return;
     const status = track(() => timelock.status.value);
     const error = track(() => timelock.error.value);
     
@@ -492,21 +543,29 @@ export default component$(() => {
       if (status && status.includes("Lock creado correctamente")) {
         // La transacción fue exitosa, actualizar en la base de datos
         // No conocemos el tx_hash directamente de viem, pero podemos usar una entrada genérica
-        updateTimelockAction.submit({
-          payment_id: pendingBlockchainAction.payment_id,
-          tx_hash: "tx_" + Date.now().toString(36), // Un identificador único basado en tiempo
-          status: 'completed'
-        });
+        if (pendingBlockchainAction.payment_id !== null) {
+          updateTimelockAction.submit({
+            payment_id: pendingBlockchainAction.payment_id,
+            tx_hash: "tx_" + Date.now().toString(36), // Un identificador único basado en tiempo
+            status: 'completed'
+          });
+        } else {
+          console.warn("No se pudo actualizar el timelock porque payment_id es null");
+        }
         
         // Resetear el estado pendiente
         pendingBlockchainAction.pending = false;
       } else if (error) {
         // La transacción falló
-        updateTimelockAction.submit({
-          payment_id: pendingBlockchainAction.payment_id,
-          tx_hash: "",
-          status: 'failed'
-        });
+        if (pendingBlockchainAction.payment_id !== null) {
+          updateTimelockAction.submit({
+            payment_id: pendingBlockchainAction.payment_id,
+            tx_hash: "",
+            status: 'failed'
+          });
+        } else {
+          console.warn("No se pudo actualizar el timelock porque payment_id es null");
+        }
         
         // Resetear el estado pendiente
         pendingBlockchainAction.pending = false;
@@ -516,6 +575,7 @@ export default component$(() => {
   
   // Cargar locks existentes cuando se muestra el panel
   useVisibleTask$(({ track }) => {
+    if (!isBrowser) return;
     track(() => showTimelockPanel.value);
     if (showTimelockPanel.value && timelock.address.value) {
       timelock.loadLocks().catch(console.error);
@@ -531,13 +591,15 @@ export default component$(() => {
   const editingCurrency = useSignal('USD');
   const editingDueDate = useSignal('');
   const editingDescription = useSignal('');
+  // Contract selection
+  const editingContractId = useSignal<string>('');
   
-  // Señales para la automatización de pagos directamente en el formulario
-  const autoSchedulePayment = useSignal<boolean>(false);  // Indica si se automatizará el pago
-  const autoScheduleTime = useSignal<string>('');  // Tiempo seleccionado para la automatización
-
-  const currentMonth = useSignal(loaderData.value.currentMonth);
-  const currentYear = useSignal(loaderData.value.currentYear);
+    // Señales para la automatización de pagos directamente en el formulario
+  const autoSchedulePayment = useSignal<boolean>(true);  // Indica si se automatizará el pago - habilitado por defecto
+  const autoScheduleTime = useSignal<string>('duedate');  // Usamos siempre la fecha de vencimiento para la automatización
+  
+  const currentMonth = useSignal<number>(loaderData.value.currentMonth);
+  const currentYear = useSignal<number>(loaderData.value.currentYear);
 
   const daysInMonth = new Date(currentYear.value, currentMonth.value, 0).getDate();
   const firstDayOfMonth = new Date(currentYear.value, currentMonth.value - 1, 1).getDay();
@@ -572,6 +634,8 @@ export default component$(() => {
       editingCurrency.value = payment.currency;
       editingDueDate.value = payment.due_date;
       editingDescription.value = payment.description || '';
+      editingContractId.value = payment.contract_id ? String(payment.contract_id) : '';
+      autoSchedulePayment.value = true;
     } else if (day) {
       const date = new Date(currentYear.value, currentMonth.value - 1, day);
       editingId.value = undefined;
@@ -581,7 +645,17 @@ export default component$(() => {
       editingCurrency.value = 'USD';
       editingDueDate.value = date.toISOString().split('T')[0];
       editingDescription.value = '';
+      editingContractId.value = '';
+      autoSchedulePayment.value = true;
     }
+    
+    // Inicializamos la hora personalizada con una hora razonable (por ejemplo, 10:00 AM)
+    customHour.value = 10;
+    customMinute.value = 0;
+    
+    // Si estamos usando la fecha de vencimiento, sincronizamos la fecha personalizada
+    customDate.value = editingDueDate.value;
+    
     // Resetear el estado de la acción pendiente al abrir el modal
     pendingBlockchainAction.processed = false;
     showModal.value = true;
@@ -622,24 +696,40 @@ export default component$(() => {
     
     // Obtener dirección del token según la moneda
     const tokenAddress = getTokenAddress(payment.currency);
-      
+    
     if (!tokenAddress) {
       timelock.error.value = `No se ha configurado el token para ${payment.currency}`;
       return;
     }
     
     // Usar tiempo personalizado si está establecido, de lo contrario usar la fecha de vencimiento
-    const releaseTimestamp = customReleaseTime.value 
-      ? customReleaseTime.value.toString() 
-      : (await dateToTimestamp(payment.due_date)).toString();
-    
-    // Crear el timelock
+    let releaseTimestamp: number;
+    const now = Math.floor(Date.now() / 1000);
+    const minRelease = now + 30 * 60; // 30 minutos desde ahora
+    if (customReleaseTime.value) {
+      releaseTimestamp = customReleaseTime.value;
+    } else {
+      releaseTimestamp = await dateToTimestamp(payment.due_date);
+    }
+    // Si la fecha es pasada, forzar mínimo 30 minutos desde ahora
+    if (releaseTimestamp < minRelease) {
+      releaseTimestamp = minRelease;
+      customReleaseTimeLabel.value = '30 minutos desde ahora (ajustado automáticamente)';
+    }
+    // Crear el timelock con releaseTimestamp como número (timestamp UNIX)
+    // Log para depuración
+    console.log('[planner-auto] Llamando a timelock.createLock con:', {
+      token: tokenAddress,
+      amount: payment.amount.toString(),
+      recipient: payment.professional_wallet,
+      releaseTime: releaseTimestamp.toString()
+    });
     timelock.createLock(
       tokenAddress,
       payment.amount.toString(),
       payment.professional_wallet, // Usamos la wallet del profesional como destinatario
       payment.amount.toString(),   // El monto completo va al profesional
-      releaseTimestamp
+      releaseTimestamp.toString() // El contrato espera string, pero debe ser el número en formato string
     );
     
     showTimeSelector.value = false; // Cerrar selector de tiempo
@@ -832,7 +922,7 @@ export default component$(() => {
                   <LuLock class="h-6 w-6 text-indigo-600 dark:text-indigo-400 mr-2" />
                   <h2 class="text-xl font-bold text-slate-800 dark:text-slate-200">TimeLock Smart Contract</h2>
                 </div>
-                <p class="text-sm text-slate-600 dark:text-slate-400">Wallet: {timelock.address.value}</p>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Wallet: {timelock.address.value}</p>
               </div>
               <div class="mt-4 sm:mt-0 space-x-2">
                 <button 
@@ -881,19 +971,20 @@ export default component$(() => {
                     <th class="px-4 py-3 text-slate-600 dark:text-slate-300 font-semibold">Time Remaining</th>
                     <th class="px-4 py-3 text-slate-600 dark:text-slate-300 font-semibold">Estado</th>
                     <th class="px-4 py-3 text-slate-600 dark:text-slate-300 font-semibold">Destinatarios</th>
+                    <th class="px-4 py-3 text-slate-600 dark:text-slate-300 font-semibold">Profesional</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-200 dark:divide-slate-700/50">
                   {timelock.loadingLocks.value ? (
                     <tr>
-                      <td colSpan={6} class="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
+                      <td colSpan={7} class="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
                         <LuLoader2 class="animate-spin h-6 w-6 mx-auto mb-2" />
                         Cargando locks...
                       </td>
                     </tr>
                   ) : timelock.locks.value.length === 0 ? (
                     <tr>
-                      <td colSpan={6} class="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
+                      <td colSpan={7} class="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
                         No hay locks creados aún.
                       </td>
                     </tr>
@@ -933,6 +1024,19 @@ export default component$(() => {
                           {lock.recipients.map((r: string, i: number) => (
                             <div key={i} class="text-xs">{r.slice(0, 6)}...{r.slice(-4)} ({lock.amounts[i].toString()})</div>
                           ))}
+                        </td>
+                        <td class="px-4 py-3 text-slate-700 dark:text-slate-300">
+                          {/* Buscar el nombre del profesional en la DB por wallet (recipients) */}
+                          {Array.isArray(lock.recipients) && lock.recipients.length > 0
+                            ? lock.recipients.map((wallet: string, i: number) => {
+                                const prof = loaderData.value.professionals.find((p: any) => p.wallet && p.wallet.toLowerCase() === wallet.toLowerCase());
+                                return (
+                                  <div key={i} class="text-xs">
+                                    {prof ? prof.name : '-'}
+                                  </div>
+                                );
+                              })
+                            : '-'}
                         </td>
                       </tr>
                     ))
@@ -996,18 +1100,46 @@ export default component$(() => {
           <div class="flex items-end sm:items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
             <div class="fixed inset-0 bg-slate-700/70 dark:bg-slate-900/80 backdrop-blur-md transition-opacity" aria-hidden="true" onClick$={() => showModal.value = false}></div>
             <div class="inline-block align-bottom bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-xl text-left overflow-hidden shadow-2xl transform transition-all border border-slate-100/50 dark:border-slate-700/50 sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-              <Form action={saveAction} onSubmitCompleted$={() => { 
-                if (saveAction.value?.success) { 
-                  showModal.value = false;
-                  
-                  // Si la automatización estaba habilitada, la creación del timelock se manejará en useTask$ que monitorea saveAction.value
-                  // No necesitamos hacer nada aquí, ya que showTimelockModal.value ya se establece en ese useTask$
-                }
-              }}>
+              <Form action={saveAction}
+                onSubmit$={e => {
+                  // Validación frontend: la fecha/hora debe ser futura
+                  const form = e.target as HTMLFormElement;
+                  const dateStr = form.due_date.value;
+                  const hour = parseInt(form.customHour.value, 10);
+                  const minute = parseInt(form.customMinute.value, 10);
+                  const selected = new Date(dateStr);
+                  selected.setHours(hour, minute, 0, 0);
+                  if (selected.getTime() <= Date.now()) {
+                    e.preventDefault();
+                    alert('La fecha y hora seleccionadas deben ser futuras.');
+                  }
+                }}
+                onSubmitCompleted$={() => { 
+                  if (saveAction.value?.success) { 
+                    showModal.value = false;
+                    // Si la automatización estaba habilitada, la creación del timelock se manejará en useTask$ que monitorea saveAction.value
+                  }
+                }}>
                 <div class="px-6 pt-5 pb-4 sm:p-6 sm:pb-4">
                   <h3 class="text-xl leading-6 font-medium text-slate-800 dark:text-slate-100">{editingId.value ? 'Edit' : 'Schedule'} Payment</h3>
                   <input type="hidden" name="id" value={editingId.value} />
-                  <div class="mt-4 space-y-4">
+                    <div class="mt-4 space-y-4">
+                      {/* Selector de zona horaria */}
+                      <div>
+                        <label for="timezone" class="block text-sm font-medium text-slate-700 dark:text-slate-300">Zona horaria</label>
+                        <select
+                          id="timezone"
+                          name="timezone"
+                          bind:value={selectedTimezone}
+                          class="mt-1 block w-full border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm py-3 px-3 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm"
+                        >
+                          {TIMEZONES.map(tz => (
+                            <option key={tz} value={tz}>{tz}</option>
+                          ))}
+                        </select>
+                      </div>
+                    {/* Contract selection input */}
+                 
                     <div>
                       <label for="professional_id" class="block text-sm font-medium text-slate-700 dark:text-slate-300">Professional</label>
                       <select 
@@ -1035,6 +1167,28 @@ export default component$(() => {
                         </div>
                       )}
                     </div>
+                       <div>
+                      <label for="contract_id" class="block text-sm font-medium text-slate-700 dark:text-slate-300">Contrato</label>
+                      <select
+                        name="contract_id"
+                        id="contract_id"
+                        bind:value={editingContractId}
+                        disabled={!editingProfessionalId.value}
+                        class="mt-1 block w-full border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm py-3 px-3 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm"
+                      >
+                        <option value="">Selecciona un contrato</option>
+                        {loaderData.value.contracts
+                          .filter((c: any) => String(c.professional_id) === editingProfessionalId.value)
+                          .map((c: any) => (
+                            <option key={c.id} value={c.id}>
+                              {c.contract_url ? `#${c.id} (${c.start_date} - ${c.end_date || 'actual'})` : `#${c.id} (${c.start_date})`}
+                            </option>
+                          ))}
+                      </select>
+                      {!editingProfessionalId.value && (
+                        <p class="text-xs text-slate-400 mt-1">Selecciona primero un profesional para ver sus contratos.</p>
+                      )}
+                    </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label for="amount" class="block text-sm font-medium text-slate-700 dark:text-slate-300">Amount</label>
@@ -1050,8 +1204,166 @@ export default component$(() => {
                       </div>
                     </div>
                     <div>
-                      <label for="due_date" class="block text-sm font-medium text-slate-700 dark:text-slate-300">Due Date</label>
-                      <input type="date" name="due_date" id="due_date" bind:value={editingDueDate} class="mt-1 block w-full border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm py-3 px-3 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm" />
+                      <label for="due_date" class="block text-sm font-medium text-slate-700 dark:text-slate-300">Due Date y Hora</label>
+                      <div class="flex flex-col space-y-2">
+                        {/* Reloj en tiempo real y zona horaria */}
+                        <div class="flex items-center gap-2 mb-2">
+                          <LuClock class="h-4 w-4 text-indigo-500" />
+                          <span class="text-xs text-slate-600 dark:text-slate-300 font-mono">
+                            Ahora: {nowDate.value.toLocaleString()} ({timezone})
+                          </span>
+                        </div>
+                        <input 
+                          type="date" 
+                          name="due_date" 
+                          id="due_date" 
+                          bind:value={editingDueDate}
+                          min={new Date().toISOString().split('T')[0]}
+                          onChange$={(e, target) => {
+                            customDate.value = target.value;
+                            // Actualizar fecha UTC seleccionada correctamente (local -> UTC)
+                            const dateParts = target.value.split('-').map(Number);
+                            let hour24 = customHour.value;
+                            if (timeFormat.value === '12h') {
+                              hour24 = to24Hour(customHour.value, amPm.value);
+                            }
+                            const localDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2], hour24, customMinute.value, 0, 0);
+                            selectedUtcDate.value = new Date(localDate.getTime());
+                            if (localDate.getTime() <= Date.now()) {
+                              utcError.value = 'La fecha/hora seleccionada en UTC ya pasó. Elige una hora mayor.';
+                            } else {
+                              utcError.value = null;
+                            }
+                          }}
+                          class="mt-1 block w-full border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm py-3 px-3 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm" 
+                        />
+                        <div class="flex items-center space-x-2">
+                          <div class="flex-1">
+                            <label for="payment_hour" class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Hora</label>
+                            <select
+                              id="payment_hour"
+                              name="customHour"
+                              value={customHour.value.toString()}
+                              onChange$={(e, target) => {
+                                customHour.value = parseInt(target.value, 10);
+                                // Actualizar fecha UTC seleccionada usando hora local
+                                const dateParts = editingDueDate.value.split('-').map(Number);
+                                let hour24 = customHour.value;
+                                if (timeFormat.value === '12h') {
+                                  hour24 = to24Hour(customHour.value, amPm.value);
+                                }
+                                const localDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2], hour24, customMinute.value, 0, 0);
+                                selectedUtcDate.value = new Date(localDate.getTime());
+                                if (localDate.getTime() <= Date.now()) {
+                                  utcError.value = 'La fecha/hora seleccionada en UTC ya pasó. Elige una hora mayor.';
+                                } else {
+                                  utcError.value = null;
+                                }
+                              }}
+                              class="block w-full border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm py-2 px-2 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm"
+                              aria-label="Hour"
+                            >
+                              {timeFormat.value === '24h'
+                                ? Array.from({length: 24}, (_, i) => i).map(hour => (
+                                    <option key={hour} value={hour}>{hour.toString().padStart(2, '0')}</option>
+                                  ))
+                                : Array.from({length: 12}, (_, i) => i + 1).map(hour => (
+                                    <option key={hour} value={hour}>{hour.toString().padStart(2, '0')}</option>
+                                  ))}
+                            </select>
+                          </div>
+                          {timeFormat.value === '12h' && (
+                            <div class="flex-1">
+                              <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">AM/PM</label>
+                              <select
+                                name="amPm"
+                                value={amPm.value}
+                                onChange$={(e, target) => {
+                                  amPm.value = target.value as 'AM' | 'PM';
+                                  // Actualizar fecha UTC seleccionada usando hora local
+                                  const dateParts = editingDueDate.value.split('-').map(Number);
+                                  const hour24 = to24Hour(customHour.value, amPm.value);
+                                  const localDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2], hour24, customMinute.value, 0, 0);
+                                  selectedUtcDate.value = new Date(localDate.getTime());
+                                  if (localDate.getTime() <= Date.now()) {
+                                    utcError.value = 'La fecha/hora seleccionada en UTC ya pasó. Elige una hora mayor.';
+                                  } else {
+                                    utcError.value = null;
+                                  }
+                                }}
+                                class="block w-full border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm py-2 px-2 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm"
+                                aria-label="AM/PM"
+                              >
+                                <option value="AM">AM</option>
+                                <option value="PM">PM</option>
+                              </select>
+                            </div>
+                          )}
+                          <div class="flex-1">
+                            <label for="payment_minute" class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Minutos</label>
+                            <select
+                              id="payment_minute"
+                              name="customMinute"
+                              value={customMinute.value.toString()}
+                              onChange$={(e, target) => {
+                                customMinute.value = parseInt(target.value, 10);
+                                // Actualizar fecha UTC seleccionada usando hora local
+                                const dateParts = editingDueDate.value.split('-').map(Number);
+                                let hour24 = customHour.value;
+                                if (timeFormat.value === '12h') {
+                                  hour24 = to24Hour(customHour.value, amPm.value);
+                                }
+                                const localDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2], hour24, customMinute.value, 0, 0);
+                                selectedUtcDate.value = new Date(localDate.getTime());
+                                if (localDate.getTime() <= Date.now()) {
+                                  utcError.value = 'La fecha/hora seleccionada en UTC ya pasó. Elige una hora mayor.';
+                                } else {
+                                  utcError.value = null;
+                                }
+                              }}
+                              class="block w-full border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm py-2 px-2 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm"
+                              aria-label="Minute"
+                            >
+                              <option value="0">00</option>
+                              <option value="15">15</option>
+                              <option value="30">30</option>
+                              <option value="45">45</option>
+                            </select>
+                          </div>
+                        </div>
+                        {/* Toggle para formato 24h/12h */}
+                        <div class="flex items-center mt-2">
+                          <input
+                            id="toggle-time-format"
+                            type="checkbox"
+                            checked={timeFormat.value === '12h'}
+                            onChange$={(_, el) => {
+                              timeFormat.value = el.checked ? '12h' : '24h';
+                              // Al cambiar el formato, ajustar customHour y amPm
+                              if (el.checked) {
+                                // 24h -> 12h
+                                const { hour12, ampm } = to12Hour(customHour.value);
+                                customHour.value = hour12;
+                                amPm.value = ampm;
+                              } else {
+                                // 12h -> 24h
+                                customHour.value = to24Hour(customHour.value, amPm.value);
+                              }
+                            }}
+                            class="h-4 w-4 text-teal-500 focus:ring-teal-400 border-gray-300 rounded"
+                          />
+                          <label for="toggle-time-format" class="ml-2 text-xs text-slate-600 dark:text-slate-400 select-none">
+                            Usar formato 12h (AM/PM)
+                          </label>
+                        </div>
+                      </div>
+                      <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Selecciona la fecha y hora exacta para el pago o automatización.<br />
+                        <b>Zona horaria local:</b> {timezone} | <b>UTC:</b> {selectedUtcDate.value ? selectedUtcDate.value.toUTCString() : '-'}
+                      </p>
+                      {utcError.value && (
+                        <div class="mt-1 text-xs text-red-600 dark:text-red-400 font-semibold">{utcError.value}</div>
+                      )}
                     </div>
                     
                     {/* Automatización de pagos */}
@@ -1075,125 +1387,27 @@ export default component$(() => {
                     
                     {autoSchedulePayment.value && (
                       <div class="p-3 bg-teal-50 dark:bg-teal-900/20 rounded-lg border border-teal-100 dark:border-teal-800/30">
-                        <label class="block text-sm font-medium text-teal-700 dark:text-teal-300 mb-2">
-                          Selecciona el tiempo de liberación:
-                        </label>
-                        <div class="grid grid-cols-3 gap-2">
-                          <button
-                            type="button"
-                            onClick$={() => autoScheduleTime.value = '30min'}
-                            class={`px-2 py-1.5 rounded text-xs font-medium ${
-                              autoScheduleTime.value === '30min'
-                              ? 'bg-teal-200 text-teal-800 border-2 border-teal-400 dark:bg-teal-800 dark:text-teal-100 dark:border-teal-600'
-                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-600'
-                            }`}
-                          >
-                            30 minutos
-                          </button>
-                          <button
-                            type="button"
-                            onClick$={() => autoScheduleTime.value = '1h'}
-                            class={`px-2 py-1.5 rounded text-xs font-medium ${
-                              autoScheduleTime.value === '1h'
-                              ? 'bg-teal-200 text-teal-800 border-2 border-teal-400 dark:bg-teal-800 dark:text-teal-100 dark:border-teal-600'
-                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-600'
-                            }`}
-                          >
-                            1 hora
-                          </button>
-                          <button
-                            type="button"
-                            onClick$={() => autoScheduleTime.value = '1d'}
-                            class={`px-2 py-1.5 rounded text-xs font-medium ${
-                              autoScheduleTime.value === '1d'
-                              ? 'bg-teal-200 text-teal-800 border-2 border-teal-400 dark:bg-teal-800 dark:text-teal-100 dark:border-teal-600'
-                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-600'
-                            }`}
-                          >
-                            1 día
-                          </button>
-                          <button
-                            type="button"
-                            onClick$={() => autoScheduleTime.value = '1w'}
-                            class={`px-2 py-1.5 rounded text-xs font-medium ${
-                              autoScheduleTime.value === '1w'
-                              ? 'bg-teal-200 text-teal-800 border-2 border-teal-400 dark:bg-teal-800 dark:text-teal-100 dark:border-teal-600'
-                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-600'
-                            }`}
-                          >
-                            1 semana
-                          </button>
-                          <button
-                            type="button"
-                            onClick$={() => autoScheduleTime.value = 'duedate'}
-                            class={`px-2 py-1.5 rounded text-xs font-medium ${
-                              autoScheduleTime.value === 'duedate'
-                              ? 'bg-teal-200 text-teal-800 border-2 border-teal-400 dark:bg-teal-800 dark:text-teal-100 dark:border-teal-600'
-                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-600'
-                            }`}
-                          >
-                            Usar fecha de vencimiento
-                          </button>
-                          <button
-                            type="button"
-                            onClick$={() => autoScheduleTime.value = 'custom'}
-                            class={`px-2 py-1.5 rounded text-xs font-medium ${
-                              autoScheduleTime.value === 'custom'
-                              ? 'bg-teal-200 text-teal-800 border-2 border-teal-400 dark:bg-teal-800 dark:text-teal-100 dark:border-teal-600'
-                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-600'
-                            }`}
-                          >
-                            <span class="flex items-center justify-center">
-                              <LuClock class="h-3 w-3 mr-1" />
-                              Personalizado
-                            </span>
-                          </button>
+                        <div class="p-2 flex items-center">
+                          <LuInfo class="h-5 w-5 text-teal-600 dark:text-teal-400 mr-2" />
+                          <p class="text-sm text-teal-700 dark:text-teal-300">
+                            El pago se programará automáticamente para la fecha de vencimiento y hora seleccionadas arriba.
+                          </p>
                         </div>
                         
-                        {autoScheduleTime.value === 'custom' && (
-                          <div class="mt-3 grid grid-cols-3 gap-2">
-                            <div>
-                              <label class="block text-xs text-slate-600 dark:text-slate-400 mb-1">Fecha</label>
-                              <input
-                                type="date"
-                                value={customDate.value}
-                                onChange$={(e, target) => {
-                                  customDate.value = target.value;
-                                }}
-                                class="block w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1 text-xs bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200"
-                                min={new Date().toISOString().split('T')[0]}
-                              />
-                            </div>
-                            <div>
-                              <label class="block text-xs text-slate-600 dark:text-slate-400 mb-1">Hora</label>
-                              <select
-                                value={customHour.value.toString()}
-                                onChange$={(e, target) => {
-                                  customHour.value = parseInt(target.value, 10);
-                                }}
-                                class="block w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1 text-xs bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200"
-                              >
-                                {Array.from({length: 24}, (_, i) => i).map(hour => (
-                                  <option key={hour} value={hour}>{hour.toString().padStart(2, '0')}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <label class="block text-xs text-slate-600 dark:text-slate-400 mb-1">Minutos</label>
-                              <select
-                                value={customMinute.value.toString()}
-                                onChange$={(e, target) => {
-                                  customMinute.value = parseInt(target.value, 10);
-                                }}
-                                class="block w-full border border-slate-300 dark:border-slate-600 rounded px-2 py-1 text-xs bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200"
-                              >
-                                <option value="0">00</option>
-                                <option value="15">15</option>
-                                <option value="30">30</option>
-                                <option value="45">45</option>
-                              </select>
-                            </div>
+                        <div class="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30 rounded-lg">
+                          <div class="flex items-center">
+                            <LuCalendar class="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2" />
+                            <p class="text-xs text-blue-700 dark:text-blue-300">
+                              <span class="font-semibold">Fecha de ejecución:</span> {editingDueDate.value} a las {customHour.value.toString().padStart(2, '0')}:{customMinute.value.toString().padStart(2, '0')}
+                            </p>
                           </div>
+                        </div>
+                        
+                        {/* Campo oculto para establecer el autoScheduleTime como 'duedate' */}
+                        <input type="hidden" name="autoScheduleTime" value="duedate" />
+                        {/* Campo oculto para AM/PM si aplica */}
+                        {timeFormat.value === '12h' && (
+                          <input type="hidden" name="amPm" value={amPm.value} />
                         )}
                       </div>
                     )}
@@ -1208,7 +1422,11 @@ export default component$(() => {
                     <input type="hidden" name="autoScheduleTime" value={autoScheduleTime.value} />
                     <input type="hidden" name="customDate" value={customDate.value} />
                     <input type="hidden" name="customHour" value={customHour.value.toString()} />
+                    {timeFormat.value === '12h' && (
+                      <input type="hidden" name="amPm" value={amPm.value} />
+                    )}
                     <input type="hidden" name="customMinute" value={customMinute.value.toString()} />
+                    <input type="hidden" name="timezone" value={selectedTimezone.value} />
                   </div>
                 </div>
                 <div class="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-700 dark:to-slate-800 px-6 py-4 flex justify-between items-center">
@@ -1226,9 +1444,9 @@ export default component$(() => {
                     <button type="button" onClick$={() => showModal.value = false} class="inline-flex justify-center items-center rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm px-5 py-2.5 bg-white dark:bg-slate-800 text-base font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 sm:w-auto sm:text-sm transition-all">
                       <LuX class="h-5 w-5 mr-2" /> Cancel
                     </button>
-                    <button type="submit" disabled={saveAction.isRunning} class="ml-3 w-full inline-flex justify-center items-center rounded-lg border border-transparent shadow-sm px-5 py-2.5 bg-gradient-to-r from-teal-500 to-teal-600 text-base font-medium text-white hover:from-teal-600 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 sm:w-auto sm:text-sm transition-all disabled:opacity-50">
-                      {saveAction.isRunning ? <LuLoader2 class="animate-spin h-5 w-5 mr-2" /> : <LuSave class="h-5 w-5 mr-2" />}
-                      Save
+                    <button type="submit" disabled={saveAction.isRunning || !!utcError.value} class={`ml-3 w-full inline-flex justify-center items-center rounded-lg border border-transparent shadow-sm px-5 py-2.5 ${autoSchedulePayment.value ? 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700' : 'bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700'} text-base font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 sm:w-auto sm:text-sm transition-all disabled:opacity-50`}>
+                      {saveAction.isRunning ? <LuLoader2 class="animate-spin h-5 w-5 mr-2" /> : autoSchedulePayment.value ? <LuLock class="h-5 w-5 mr-2" /> : <LuSave class="h-5 w-5 mr-2" />}
+                      {autoSchedulePayment.value ? 'Programar Pago para el ' + editingDueDate.value : 'Guardar Pago Manual'}
                     </button>
                   </div>
                 </div>
@@ -1685,7 +1903,6 @@ export default component$(() => {
                   type="button" 
                   onClick$={() => {
                     showTimelockModal.value = false;
-                    timelock.loadLocks();
                     showTimelockPanel.value = true;
                     currentTimelockPayment.value = null; // Limpiar el pago actual
                   }}
