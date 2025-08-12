@@ -184,6 +184,9 @@ export async function runMigrations(requestEvent: RequestEventBase): Promise<voi
 
   // Asegura columna contract_id (por si la tabla ya existía sin ella)
   try { await client.execute(`ALTER TABLE payments ADD COLUMN contract_id INTEGER;`); } catch (e: any) { if (!String(e.message).toLowerCase().includes("duplicate column name")) throw e; }
+    // Asegura columna updated_at (por si la tabla ya existía sin ella)
+    // SQLite/Turso does not allow non-constant DEFAULT in ALTER TABLE, so add without DEFAULT
+    try { await client.execute(`ALTER TABLE payments ADD COLUMN updated_at DATETIME;`); } catch (e: any) { if (!String(e.message).toLowerCase().includes("duplicate column name")) throw e; }
 
   // TIMELOCKS TABLE (for blockchain timelock payments)
   await client.execute(`CREATE TABLE IF NOT EXISTS timelocks (

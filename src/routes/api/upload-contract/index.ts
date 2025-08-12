@@ -41,10 +41,12 @@ export const onPost: RequestHandler = async (requestEvent) => {
     json(200, { success: true, fileName });
 
   } catch (e: any) {
-    console.error('File upload error:', e);
-    if (e.status) { // It's an ErrorResponse from Qwik City
+    // Always log a string, never undefined
+    const errMsg = (e && typeof e === 'object' && 'message' in e && typeof e.message === 'string') ? e.message : String(e);
+    console.error('File upload error:', errMsg);
+    if (e && typeof e.status !== 'undefined') { // It's an ErrorResponse from Qwik City
         throw e;
     }
-    throw error(500, 'An unexpected error occurred during file upload.');
+    throw error(500, errMsg || 'An unexpected error occurred during file upload.');
   }
 };

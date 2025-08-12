@@ -1,62 +1,207 @@
-# Qwik City App ⚡️
 
-- [Qwik Docs](https://qwik.builder.io/)
-- [Discord](https://qwik.builder.io/chat)
-- [Qwik GitHub](https://github.com/BuilderIO/qwik)
-- [@QwikDev](https://twitter.com/QwikDev)
-- [Vite](https://vitejs.dev/)
+# Timelock App
+
+Timelock es una aplicación web moderna construida con [Qwik](https://qwik.builder.io/) y [Qwik City](https://qwik.builder.io/qwikcity/overview/), diseñada para gestionar contratos, pagos, profesionales y flujos de trabajo relacionados, con un enfoque en SSR, resumabilidad y performance. Utiliza Turso (libSQL/SQLite) como base de datos distribuida, Tailwind CSS para estilos, y Modular Forms para formularios type-safe.
 
 ---
 
-## Project Structure
+## 🛠️ Tech Stack
 
-This project is using Qwik with [QwikCity](https://qwik.builder.io/qwikcity/overview/). QwikCity is just an extra set of tools on top of Qwik to make it easier to build a full site, including directory-based routing, layouts, and more.
+- **Framework:** [Qwik](https://qwik.builder.io/) + Qwik City (SSR, resumability, routing)
+- **Base de Datos:** [Turso](https://turso.tech/) ([libSQL](https://libsql.org/)/SQLite compatible)
+- **Estilos:** [Tailwind CSS](https://tailwindcss.com/)
+- **Formularios:** [@modular-forms/qwik](https://modularforms.dev/docs/qwik)
+- **Testing Unitario/Componentes:** [Vitest](https://vitest.dev/) + [@testing-library/qwik](https://testing-library.com/docs/qwik-testing-library/intro/)
+- **Testing E2E:** [Playwright](https://playwright.dev/)
+- **Deploy:** Cloudflare Pages, Express, o SSG
+- **Gestor de Paquetes:** `yarn`
 
-Inside your project, you'll see the following directory structure:
+---
+
+## 📁 Estructura del Proyecto
 
 ```
-├── public/
-│   └── ...
-└── src/
-    ├── components/
-    │   └── ...
-    └── routes/
-        └── ...
+├── public/                # Activos estáticos (imágenes, fuentes, favicon, etc.)
+├── src/
+│   ├── components/        # Componentes Qwik reutilizables
+│   │   ├── ui/            # Componentes UI genéricos
+│   │   └── feature/       # Componentes específicos de funcionalidad
+│   ├── helpers/           # Helpers y utilidades de UI
+│   ├── media/             # Imágenes internas
+│   ├── models/            # Tipos y modelos de dominio
+│   ├── routes/            # Rutas, layouts, endpoints API (Qwik City)
+│   ├── utils/             # Utilidades, clientes, constantes
+│   └── theme.css          # Temas y estilos globales
+├── migrations/            # Migraciones SQL para Turso
+├── private_uploads/       # Archivos privados (no públicos)
+├── server/                # Entrypoints SSR, lógica server-only
+├── adapters/              # Configuración para Cloudflare, Express, etc.
+├── tests/                 # (Opcional) Tests adicionales
+├── package.json           # Dependencias y scripts
+├── tsconfig.json          # Configuración TypeScript
+├── vite.config.ts         # Configuración Vite/Qwik
+└── ...
 ```
 
-- `src/routes`: Provides the directory-based routing, which can include a hierarchy of `layout.tsx` layout files, and an `index.tsx` file as the page. Additionally, `index.ts` files are endpoints. Please see the [routing docs](https://qwik.builder.io/qwikcity/routing/overview/) for more info.
+---
 
-- `src/components`: Recommended directory for components.
+## 🚀 Instalación y Setup
 
-- `public`: Any static assets, like images, can be placed in the public directory. Please see the [Vite public directory](https://vitejs.dev/guide/assets.html#the-public-directory) for more info.
+1. **Clona el repositorio:**
+  ```sh
+  git clone https://github.com/GolfredoPerezFernandez/timelock-app.git
+  cd timelock-app
+  ```
+2. **Instala dependencias:**
+  ```sh
+  yarn install
+  ```
+3. **Configura variables de entorno:**
+  - Variables públicas: `PUBLIC_NOMBRE_VAR` en `.env` (no sensibles)
+  - Variables secretas: Configura en el entorno de despliegue (Turso, claves, etc.)
+  - Ejemplo de acceso en server: `requestEvent.env.get('NOMBRE_VAR')`
+4. **Migraciones de base de datos:**
+  - Ejecuta los scripts SQL en `migrations/` sobre tu instancia Turso.
+  - Ejemplo:
+    ```sh
+    turso db shell my-db < migrations/create_timelocks_table.sql
+    ```
+5. **Build y chequeo de tipos:**
+  ```sh
+  yarn build
+  npx tsc
+  ```
+6. **Desarrollo:**
+  ```sh
+  yarn dev
+  ```
 
-## Add Integrations and deployment
+---
 
-Use the `pnpm qwik add` command to add additional integrations. Some examples of integrations includes: Cloudflare, Netlify or Express Server, and the [Static Site Generator (SSG)](https://qwik.builder.io/qwikcity/guides/static-site-generation/).
+## 🧪 Testing
 
-```shell
-pnpm qwik add # or `pnpm qwik add`
+Antes de correr tests, asegúrate de que el proyecto compila y no tiene errores de tipado:
+
+```sh
+yarn build
+npx tsc
 ```
 
-## Development
 
-Development mode uses [Vite's development server](https://vitejs.dev/). The `dev` command will server-side render (SSR) the output during development.
 
-```shell
-npm start # or `pnpm start`
-```
+## 🌐 Deploy
 
-> Note: during dev mode, Vite may request a significant number of `.js` files. This does not represent a Qwik production build.
+- **Fly.io (Deploy principal):**
+  - Asegúrate de tener la [CLI de Fly.io](https://fly.io/docs/hands-on/install-flyctl/) instalada y estar autenticado (`fly auth login`).
+  - El archivo `fly.toml` ya está configurado para la app (`app = 'saveetimelock-knrt'`, región `bog`, puerto interno 3000, recursos performance-2x).
+  - Despliega con:
+    ```sh
+    fly deploy
+    ```
+  - Puedes configurar variables de entorno y secretos con:
+    ```sh
+    fly secrets set NOMBRE_VAR=valor
+    ```
+  - Consulta logs con:
+    ```sh
+    fly logs
+    ```
+  - Más info: [Fly.io Docs](https://fly.io/docs/)
 
-## Preview
 
-The preview command will create a production build of the client modules, a production build of `src/entry.preview.tsx`, and run a local server. The preview server is only for convenience to preview a production build locally and should not be used as a production server.
+- **Fly.io (Deploy principal):**
+  - Asegúrate de tener la [CLI de Fly.io](https://fly.io/docs/hands-on/install-flyctl/) instalada y estar autenticado (`fly auth login`).
+  - El archivo `fly.toml` ya está configurado para la app (`app = 'saveetimelock-knrt'`, región `bog`, puerto interno 3000, recursos performance-2x).
+  - Despliega con:
+    ```sh
+    fly deploy
+    ```
+  - Puedes configurar variables de entorno y secretos con:
+    ```sh
+    fly secrets set NOMBRE_VAR=valor
+    ```
+  - Consulta logs con:
+    ```sh
+    fly logs
+    ```
+  - Más info: [Fly.io Docs](https://fly.io/docs/)
 
-```shell
-pnpm preview # or `pnpm preview`
-```
+- **Docker (opcional):**
+  - Build de la imagen:
+    ```sh
+    docker build -t timelock-app .
+    ```
+  - Ejecuta el contenedor:
+    ```sh
+    docker run -p 3000:3000 timelock-app
+    ```
 
-## Production
+- **Express (opcional):**
+  - Build: `yarn build`
+  - Serve: `yarn serve`
+  - Visita: [http://localhost:8080/](http://localhost:8080/)
+
+- **SSG (opcional):**
+  - `yarn build.server`
+
+---
+
+## 🗄️ Base de Datos y Migraciones (Turso)
+
+- Todas las operaciones CRUD se realizan en el servidor usando el cliente `@libsql/client`.
+- Migraciones SQL en `migrations/`.
+- Ejemplo de migración:
+  ```sh
+  turso db shell my-db < migrations/add_contract_id_to_payments.sql
+  ```
+
+---
+
+## 📝 Formularios con Modular Forms
+
+- Usa `@modular-forms/qwik` para formularios type-safe y validación robusta.
+- Validación recomendada con [Valibot](https://valibot.dev/) o Zod.
+- Los formularios se procesan en el servidor usando `formAction$`.
+- Ver ejemplos en los componentes de `src/routes/`.
+
+---
+
+## 🎨 Estilos y Temas
+
+- Tailwind CSS como base (`yarn qwik add tailwind` ya aplicado).
+- Temas claro/oscuro gestionados con clase `dark` en `document.documentElement`.
+- Fuentes personalizadas en `public/fonts/` y declaradas en CSS.
+
+---
+
+## 🧑‍💻 Principios y Buenas Prácticas
+
+- **Qwik First:** Usa las primitivas de Qwik (`component$`, `useSignal`, `useStore`, etc.)
+- **SSR y Resumabilidad:** Evita patrones que rompan la resumabilidad.
+- **Acceso a datos solo en server:** CRUD y lógica sensible solo en server (`routeLoader$`, `routeAction$`, `server$`).
+- **Testing riguroso:** Unit, component y E2E tests obligatorios para flujos críticos.
+- **Tipado estricto:** TypeScript en todo.
+- **Accesibilidad:** HTML semántico y roles ARIA.
+- **Estilo:** Sigue las reglas de ESLint y Prettier.
+- **Ver más en `.github/copilot-instructions.md`**
+
+---
+
+## 📚 Recursos
+
+- [Qwik Docs](https://qwik.builder.io/)
+- [Qwik City Routing](https://qwik.builder.io/qwikcity/routing/overview/)
+- [Turso Docs](https://docs.turso.tech/)
+- [Tailwind CSS](https://tailwindcss.com/docs)
+- [Modular Forms Qwik](https://modularforms.dev/docs/qwik)
+- [Valibot](https://valibot.dev/)
+- [Playwright](https://playwright.dev/)
+
+---
+
+## Licencia
+
+MIT
 
 The production build will generate client and server modules by running both client and server build commands. The build command will use Typescript to run a type check on the source code.
 
@@ -117,17 +262,3 @@ In the above example, it's saying _all_ pages should be SSR'd. However, the root
 
 In most cases the generated `dist/_routes.json` file is ideal. However, if you need more granular control over each path, you can instead provide you're own `public/_routes.json` file. When the project provides its own `public/_routes.json` file, then the Cloudflare adaptor will not auto-generate the routes config and instead use the committed one within the `public` directory.
 
-## Express Server
-
-This app has a minimal [Express server](https://expressjs.com/) implementation. After running a full build, you can preview the build using the command:
-
-```
-yarn serve
-```
-
-Then visit [http://localhost:8080/](http://localhost:8080/)
-
-V#g6aeIRKM
-testangeles@gmail.com
-Csq@KwWGmj
-saveetimelock

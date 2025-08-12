@@ -2,6 +2,7 @@ import { component$, useSignal, $, useTask$ } from '@builder.io/qwik';
 import { routeLoader$, routeAction$, Form, zod$ } from '@builder.io/qwik-city';
 import { tursoClient } from '~/utils/turso';
 import { getSession } from '~/utils/auth';
+import { isAdmin } from '~/utils/isAdmin';
 import { 
   LuBriefcase, 
   LuSearch,
@@ -39,12 +40,31 @@ interface Professional {
 }
 
 export const useContractsLoader = routeLoader$(async (requestEvent) => {
+  const session = await getSession(requestEvent);
+  if (!session.isAuthenticated) {
+    throw requestEvent.fail(401, { error: 'Unauthorized' });
+  }
   const client = tursoClient(requestEvent);
-  const result = await client.execute(`
-    SELECT c.id, c.professional_id, p.name as professional_name, c.start_date, c.end_date, c.status, c.contract_url 
+  let sql = `SELECT c.id, c.professional_id, p.name as professional_name, c.start_date, c.end_date, c.status, c.contract_url 
     FROM contracts c
-    JOIN professionals p ON c.professional_id = p.id
-  `);
+    JOIN professionals p ON c.professional_id = p.id`;
+  let args: any[] = [];
+  if (!isAdmin(session)) {
+    // Buscar el professional_id asociado al usuario normal
+    const profRes = await client.execute({
+      sql: 'SELECT id FROM professionals WHERE user_id = ?',
+      args: [session.userId]
+    });
+    if (!profRes.rows.length) {
+      throw requestEvent.fail(403, { error: 'No professional profile found for this user.' });
+    }
+    const professionalId = String(profRes.rows[0].id);
+    sql += ' WHERE c.professional_id = ?';
+    args.push(professionalId);
+    // Guardar el professionalId en la sesión para usarlo en la creación de contratos
+    (session as any).professionalId = professionalId;
+  }
+  const result = await client.execute({ sql, args });
   return result.rows as unknown as Contract[];
 });
 
@@ -62,10 +82,23 @@ export const useCreateContract = routeAction$(async (data, requestEvent) => {
     throw requestEvent.redirect(303, '/auth');
   }
 
+  let professionalId = data.professionalId;
+  if (!isAdmin(session)) {
+    // Buscar el professional_id asociado al usuario normal
+    const profRes = await client.execute({
+      sql: 'SELECT id FROM professionals WHERE user_id = ?',
+      args: [session.userId]
+    });
+    if (!profRes.rows.length) {
+      throw requestEvent.fail(403, { error: 'No professional profile found for this user.' });
+    }
+    professionalId = String(profRes.rows[0].id);
+  }
+
   try {
     await client.execute({
       sql: 'INSERT INTO contracts (professional_id, user_id, start_date, end_date, status, contract_url) VALUES (?, ?, ?, ?, ?, ?)',
-      args: [data.professionalId, session.userId, data.startDate, data.endDate, 'active', data.contractUrl ?? null]
+      args: [professionalId || '', session.userId, data.startDate, data.endDate, 'active', data.contractUrl ?? null]
     });
     return { success: true };
   } catch (error) {
@@ -74,7 +107,7 @@ export const useCreateContract = routeAction$(async (data, requestEvent) => {
   }
 }, zod$((z) =>
   z.object({
-    professionalId: z.string().min(1, 'Professional is required.'),
+    professionalId: z.string().optional(),
     startDate: z.string().min(1, 'Start date is required.'),
     endDate: z.string().min(1, 'End date is required.'),
     contractUrl: z.string().optional().nullable(),
@@ -85,6 +118,28 @@ export default component$(() => {
   const contracts = useContractsLoader();
   const professionals = useProfessionalsLoader();
   const createContractAction = useCreateContract();
+
+  // Determine if user is admin and if user has a professional profile
+  const session = typeof window !== 'undefined' ? null : (contracts as any)?.session;
+  const isAdminUser = contracts.value.length > 0 && isAdmin && isAdmin(contracts.value[0] as any);
+  // For non-admins, check if they have a professional profile
+  let userProfessionalId: string | null = null;
+  if (!isAdminUser && contracts.value.length > 0) {
+    userProfessionalId = String(contracts.value[0].professional_id);
+  }
+
+  // Debug logs
+  if (typeof window !== 'undefined') {
+    // Only log in browser
+    // eslint-disable-next-line no-console
+    console.log('[DEBUG contracts] isAdminUser:', isAdminUser);
+    // eslint-disable-next-line no-console
+    console.log('[DEBUG contracts] userProfessionalId:', userProfessionalId);
+    // eslint-disable-next-line no-console
+    console.log('[DEBUG contracts] contracts.value:', contracts.value);
+    // eslint-disable-next-line no-console
+    console.log('[DEBUG contracts] professionals.value:', professionals.value);
+  }
 
   const searchQuery = useSignal('');
   const showNewContractModal = useSignal(false);
@@ -142,16 +197,22 @@ export default component$(() => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Upload failed');
+        let errorMsg = 'Upload failed';
+        try {
+          const errorData = await response.json();
+          if (errorData && typeof errorData.error === 'string' && errorData.error.length > 0) {
+            errorMsg = errorData.error;
+          }
+        } catch {}
+        throw new Error(errorMsg);
       }
 
       const result = await response.json();
-      contractUrl.value = result.fileName;
-      contractPreviewUrl.value = `/api/contracts/view/${result.fileName}`;
+      contractUrl.value = result.fileName || '';
+      contractPreviewUrl.value = result.fileName ? `/api/contracts/view/${result.fileName}` : '';
 
     } catch (error: any) {
-      uploadError.value = error.message || 'An unexpected error occurred.';
+      uploadError.value = (error && typeof error.message === 'string' && error.message.length > 0) ? error.message : 'An unexpected error occurred.';
       contractUrl.value = null;
       contractPreviewUrl.value = '';
     } finally {
@@ -205,14 +266,19 @@ export default component$(() => {
             </div>
             
             <div class="mt-4 sm:mt-0 flex flex-col sm:flex-row gap-3">
-              <button 
-                onClick$={() => showNewContractModal.value = true}
-                class="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-all duration-200"
-              >
-                <LuPlus class="mr-2 h-4 w-4" />
-                Create Contract
-              </button>
-              
+              {/* Only show Create Contract button if admin, or if user has a professional profile */}
+              {(isAdminUser || userProfessionalId) && (
+                <button
+                  onClick$={() => {
+                    // Only allow modal if admin or user has professional profile
+                    if (isAdminUser || userProfessionalId) showNewContractModal.value = true;
+                  }}
+                  class="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-all duration-200"
+                >
+                  <LuPlus class="mr-2 h-4 w-4" />
+                  Create Contract
+                </button>
+              )}
               <button class="inline-flex items-center justify-center px-4 py-2 border border-slate-200 dark:border-slate-600 rounded-md shadow-sm text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-all duration-200">
                 <LuDownload class="mr-2 h-4 w-4" />
                 Export
@@ -307,7 +373,7 @@ export default component$(() => {
                            </button>
                          )}
                         <button class="p-1.5 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:text-indigo-400 dark:hover:bg-indigo-900/20 rounded-full transition-all">
-                          <LuFileText class="h-5 w-5" title="View Invoices" />
+                          <LuFileText class="h-5 w-5" />
                         </button>
                       </div>
                     </td>
@@ -363,26 +429,30 @@ export default component$(() => {
                       </h3>
                       <div class="mt-4">
                         <div class="space-y-4">
-                          {/* Professional Select */}
-                          <div>
-                            <label for="professional" class="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                              Professional
-                            </label>
-                            <select
-                              name="professionalId"
-                              id="professional"
-                              bind:value={professionalId}
-                              class="mt-1 block w-full pl-3 pr-10 py-3 text-base border border-slate-300 dark:border-slate-600 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm rounded-lg bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 shadow-sm transition-all"
-                              required
-                            >
-                              <option value="">Select a professional</option>
-                              {professionals.value.map((prof: Professional) => (
-                                <option key={`prof-${prof.id}`} value={prof.id}>
-                                  {`${prof.name} - ${prof.role}`}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
+                          {/* Professional Select (only for admin) or hidden for normal users */}
+                          {isAdminUser ? (
+                            <div>
+                              <label for="professional" class="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                Professional
+                              </label>
+                              <select
+                                name="professionalId"
+                                id="professional"
+                                bind:value={professionalId}
+                                class="mt-1 block w-full pl-3 pr-10 py-3 text-base border border-slate-300 dark:border-slate-600 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm rounded-lg bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 shadow-sm transition-all"
+                                required
+                              >
+                                <option value="">Select a professional</option>
+                                {professionals.value.map((prof: Professional) => (
+                                  <option key={`prof-${prof.id}`} value={prof.id}>
+                                    {`${prof.name} - ${prof.role}`}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          ) : (
+                            <input type="hidden" name="professionalId" value={userProfessionalId ?? ''} />
+                          )}
                           
                           {/* Date Fields */}
                           <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">

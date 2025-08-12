@@ -2,6 +2,15 @@ import { component$, useSignal, $, useTask$ } from '@builder.io/qwik';
 import { routeLoader$, routeAction$, Form, zod$, z } from '@builder.io/qwik-city';
 import { tursoClient } from '~/utils/turso';
 import { getSession } from '~/utils/auth';
+
+
+export const useAuthLoader = routeLoader$(async (event) => {
+  const session = await getSession(event);
+  if (!session?.isAuthenticated) {
+    throw event.redirect(302, '/auth');
+  }
+  return session;
+});
 import { 
   LuFileText, 
   LuSearch, 
@@ -155,6 +164,7 @@ export const useDeleteInvoice = routeAction$(async ({ id }, requestEvent) => {
 }));
 
 export default component$(() => {
+  useAuthLoader();
   const invoicesData = useInvoicesLoader();
   const addInvoiceAction = useAddInvoice();
   const updateStatusAction = useUpdateInvoiceStatus();

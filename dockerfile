@@ -38,21 +38,24 @@ FROM base as final
 # Use production node environment by default.
 ENV NODE_ENV production
 ENV ORIGIN https://saveetimelock-knrt.fly.dev/
- 
+
+# Crear el directorio de uploads y dar permisos al usuario node
+RUN mkdir -p /usr/src/app/private_uploads && chown node:node /usr/src/app/private_uploads
+
 # Run the application as a non-root user.
 USER node
- 
+
 # Copy package.json so that package manager commands can be used.
 COPY package.json .
- 
+
 # Copy the production dependencies from the deps stage and also
 # the built application from the build stage into the image.
 COPY --from=deps /usr/src/app/node_modules ./node_modules
 COPY --from=build /usr/src/app/dist ./dist
 COPY --from=build /usr/src/app/server ./server
- 
+
 # Expose the port that the application listens on.
 EXPOSE 3000
- 
+
 # Run the application.
 CMD yarn serve

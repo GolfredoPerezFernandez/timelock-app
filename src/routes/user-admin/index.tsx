@@ -2,6 +2,14 @@ import { component$, useSignal, $ } from '@builder.io/qwik';
 import { routeLoader$, routeAction$, Form, zod$, z } from '@builder.io/qwik-city';
 import { tursoClient } from '~/utils/turso';
 import { getSession } from '~/utils/auth';
+
+export const useAuthLoader = routeLoader$(async (event) => {
+  const session = await getSession(event);
+  if (!session?.isAuthenticated && !session?.is_admin) {
+    throw event.redirect(302, '/auth');
+  }
+  return session;
+});
 import { 
   LuUsers, 
   LuPlus, 
@@ -131,6 +139,7 @@ export const useDeleteUser = routeAction$(async ({ id }, requestEvent) => {
 });
 
 export default component$(() => {
+  useAuthLoader();
   const users = useUsersLoader();
   const saveAction = useSaveUser();
   const toggleStatusAction = useToggleUserStatus();

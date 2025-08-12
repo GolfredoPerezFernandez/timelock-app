@@ -2,6 +2,14 @@ import { component$, useSignal, useStore, $, useTask$ } from '@builder.io/qwik';
 import { routeLoader$, routeAction$, Form, z, zod$ } from '@builder.io/qwik-city';
 import { tursoClient } from '~/utils/turso';
 import { getSession } from '~/utils/auth';
+
+export const useAuthLoader = routeLoader$(async (event) => {
+  const session = await getSession(event);
+  if (!session?.isAuthenticated) {
+    throw event.redirect(302, '/auth');
+  }
+  return session;
+});
 import { 
   LuUsers, 
   LuSearch, 
@@ -204,6 +212,7 @@ export const useEditProfessional = routeAction$(
 );
 
 export default component$(() => {
+  useAuthLoader();
   const professionals = useProfessionalsLoader();
   const addProfessionalAction = useAddProfessional();
   const editProfessionalAction = useEditProfessional();
@@ -360,13 +369,13 @@ export default component$(() => {
                     <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div class="flex justify-end space-x-2">
                         <button class="p-1.5 text-slate-600 dark:text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:text-teal-400 dark:hover:bg-teal-900/20 rounded-full transition-all">
-                          <LuEye class="h-5 w-5" title="View Details" />
+                          <LuEye class="h-5 w-5" />
                         </button>
                         <button 
                           onClick$={() => openEditModal(prof)}
                           class="p-1.5 text-slate-600 dark:text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:text-blue-400 dark:hover:bg-blue-900/20 rounded-full transition-all"
                         >
-                          <LuPencil class="h-5 w-5" title="Edit" />
+                          <LuPencil class="h-5 w-5" />
                         </button>
                         <button 
                           onClick$={() => {
@@ -375,7 +384,7 @@ export default component$(() => {
                           }}
                           class="p-1.5 text-slate-600 dark:text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20 rounded-full transition-all"
                         >
-                          <LuTrash class="h-5 w-5" title="Delete" />
+                          <LuTrash class="h-5 w-5" />
                         </button>
                       </div>
                     </td>

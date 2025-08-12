@@ -65,7 +65,7 @@ export const getSession = async (requestEvent: RequestEventBase): Promise<UserSe
 // Convert string to ArrayBuffer
 function stringToArrayBuffer(str: string): ArrayBuffer {
   const encoder = new TextEncoder();
-  return encoder.encode(str);
+  return encoder.encode(str).buffer;
 }
 
 // Convert ArrayBuffer to hex string
@@ -103,9 +103,9 @@ export async function hashPassword(password: string): Promise<string> {
   const combined = new Uint8Array(salt.length + 32);
   combined.set(salt);
   combined.set(new Uint8Array(derivedKey), salt.length);
-  const hex = arrayBufferToHex(combined);
+  const hex = arrayBufferToHex(combined.buffer);
   console.log('[hashPassword] password:', password);
-  console.log('[hashPassword] salt:', arrayBufferToHex(salt));
+  console.log('[hashPassword] salt:', arrayBufferToHex(salt.buffer));
   console.log('[hashPassword] derivedKey:', arrayBufferToHex(derivedKey));
   console.log('[hashPassword] combined hex:', hex);
   // Return as hex string
@@ -141,9 +141,9 @@ export async function verifyPassword(
     256
   );
   const derivedKeyHex = arrayBufferToHex(derivedKey);
-  const storedKeyHex = arrayBufferToHex(storedKey);
+  const storedKeyHex = arrayBufferToHex(storedKey.buffer);
   console.log('[verifyPassword] password:', password);
-  console.log('[verifyPassword] salt:', arrayBufferToHex(salt));
+  console.log('[verifyPassword] salt:', arrayBufferToHex(salt.buffer));
   console.log('[verifyPassword] derivedKey:', derivedKeyHex);
   console.log('[verifyPassword] storedKey:', storedKeyHex);
   // Compare the derived key with the stored key

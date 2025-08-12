@@ -1,7 +1,17 @@
 import { component$, useSignal, $ } from '@builder.io/qwik';
 import { routeLoader$, useLocation } from '@builder.io/qwik-city';
+import { getSession } from '~/utils/auth';
 import { tursoClient, runMigrations } from '~/utils/turso';
 import { LuUsers, LuFileText, LuBriefcase, LuDollarSign, LuAlertCircle, LuClock, LuTrendingUp } from '@qwikest/icons/lucide';
+
+// Auth protection loader
+export const useAuthLoader = routeLoader$(async (event) => {
+  const session = await getSession(event);
+  if (!session.isAuthenticated) {
+    throw event.redirect(302, '/auth');
+  }
+  return session;
+});
 
 // Dashboard data loader
 export const useDashboardDataLoader = routeLoader$(async (requestEvent) => {
@@ -76,6 +86,7 @@ export const useDashboardDataLoader = routeLoader$(async (requestEvent) => {
 });
 
 export default component$(() => {
+  useAuthLoader();
   const dashboardData = useDashboardDataLoader();
   const location = useLocation();
 

@@ -2,6 +2,16 @@ import { component$, useSignal } from '@builder.io/qwik';
 import { routeLoader$, routeAction$, Form, zod$, z } from '@builder.io/qwik-city';
 import { tursoClient } from '~/utils/turso';
 import { getSession } from '~/utils/auth';
+import { isAdmin } from '~/utils/isAdmin';
+
+
+export const useAuthLoader = routeLoader$(async (event) => {
+  const session = await getSession(event);
+  if (!session?.isAuthenticated || !isAdmin(session)) {
+    throw event.redirect(302, '/auth');
+  }
+  return session;
+});
 import { 
   LuSettings, 
   LuSave, 
@@ -30,9 +40,12 @@ interface Settings {
 
 // Data Loader
 export const useSettingsLoader = routeLoader$(async (requestEvent) => {
+  const session = await getSession(requestEvent);
+  if (!isAdmin(session)) {
+    throw requestEvent.fail(401, { error: 'Unauthorized' });
+  }
   const db = tursoClient(requestEvent);
   const result = await db.execute('SELECT * FROM app_settings WHERE id = 1');
-  
   const row = result.rows[0] as any;
   return {
     ...row,
@@ -81,6 +94,7 @@ export const useUpdateSettings = routeAction$(
 );
 
 export default component$(() => {
+  useAuthLoader();
 
   const settings = useSettingsLoader();
   const updateAction = useUpdateSettings();

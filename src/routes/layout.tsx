@@ -36,73 +36,84 @@ export default component$(() => {
   const isSidebarExpanded = useSignal(true); // Default to expanded
 
   const navigation = [
-    {
-      name: 'Dashboard',
-      href: '/',
-      icon: LuPieChart,
-      description: 'Overview of key metrics',
-      adminOnly: false,
-    },
-    {
-      name: 'Professionals',
-      href: '/professionals',
-      icon: LuUsers,
-      description: 'Manage professional profiles',
-      adminOnly: false,
-    },
-    {
-      name: 'Contracts',
-      href: '/contracts',
-      icon: LuBriefcase,
-      description: 'Administer service contracts',
-      adminOnly: true,
-    },
-    {
-      name: 'Invoices',
-      href: '/invoices',
-      icon: LuFileText,
-      description: 'Track and manage invoices',
-      adminOnly: false,
-    },
-    {
-      name: 'Settlements',
-      href: '/settlements',
-      icon: LuDollarSign,
-      description: 'Process payment settlements',
-      adminOnly: true,
-    },
-    {
-      name: 'Planner',
-      href: '/planner',
-      icon: LuCalendar,
-      description: 'View payment schedules',
-      adminOnly: true,
-    },
-    {
-      name: 'Payment Scheduler',
-      href: '/planner-auto',
-      icon: LuClock,
-      description: 'Automate payment schedules',
-      adminOnly: true,
-    },
-    {
-      name: 'Settings',
-      href: '/settings',
-      icon: LuSettings,
-      description: 'Configure application settings',
-      adminOnly: true,
-    },
-    ...(session.value.role === 'super_admin'
-      ? [
-          {
+    // Admin y super_admin ven todo, usuarios normales solo Contracts, Invoices, Planner Auto
+    ...(session.value.role === 'admin' || session.value.role === 'super_admin' ? [
+      {
+        name: 'Dashboard',
+        href: '/',
+        icon: LuPieChart,
+        description: 'Overview of key metrics',
+      },
+      {
+        name: 'Professionals',
+        href: '/professionals',
+        icon: LuUsers,
+        description: 'Manage professional profiles',
+      },
+      {
+        name: 'Contracts',
+        href: '/contracts',
+        icon: LuBriefcase,
+        description: 'Administer service contracts',
+      },
+      {
+        name: 'Invoices',
+        href: '/invoices',
+        icon: LuFileText,
+        description: 'Track and manage invoices',
+      },
+      {
+        name: 'Settlements',
+        href: '/settlements',
+        icon: LuDollarSign,
+        description: 'Process payment settlements',
+      },
+      {
+        name: 'Planner',
+        href: '/planner',
+        icon: LuCalendar,
+        description: 'View payment schedules',
+      },
+      {
+        name: 'Payment Scheduler',
+        href: '/planner-auto',
+        icon: LuClock,
+        description: 'Automate payment schedules',
+      },
+      {
+        name: 'Settings',
+        href: '/settings',
+        icon: LuSettings,
+        description: 'Configure application settings',
+      },
+      ...(session.value.role === 'super_admin'
+        ? [{
             name: 'User Admin',
             href: '/user-admin',
             icon: LuUsers,
             description: 'Manage system users',
-            adminOnly: true,
-          },
-        ]
-      : []),
+          }]
+        : []),
+    ] : [
+      {
+        name: 'Contracts',
+        href: '/contracts',
+        icon: LuBriefcase,
+        description: 'Administer service contracts',
+      },
+      {
+        name: 'Invoices',
+        href: '/invoices',
+        icon: LuFileText,
+        description: 'Track and manage invoices',
+      },
+      {
+        name: 'Payment Scheduler',
+        href: '/planner-auto',
+        icon: LuClock,
+        description: 'Automate payment schedules',
+      },
+    ]),
   ];
 
   const accountNavigation = session.value.isAuthenticated
@@ -180,8 +191,7 @@ export default component$(() => {
           </div>
         )}
         <nav class="flex-1 px-2 py-4 space-y-2">
-          {navigation.map((item) => {
-            if (item.adminOnly && session.value.role === 'freelancer') return null;
+          {session.value.isAuthenticated && navigation.map((item) => {
             const isActive = location.url.pathname === item.href || (item.href !== '/' && location.url.pathname.startsWith(item.href));
             return (
               <Link
@@ -244,8 +254,7 @@ export default component$(() => {
             </div>
             <nav class="flex flex-col h-full">
               <div class="flex-1 space-y-2">
-                {navigation.map((item) => {
-                  if (item.adminOnly && session.value.role === 'freelancer') return null;
+                {session.value.isAuthenticated && navigation.map((item) => {
                   const isActive = location.url.pathname === item.href || (item.href !== '/' && location.url.pathname.startsWith(item.href));
                   return (
                     <Link

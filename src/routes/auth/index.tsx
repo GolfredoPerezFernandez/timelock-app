@@ -103,33 +103,49 @@ export const useDbInitializer = routeLoader$(async (requestEvent) => {
 export const useLogin = routeAction$(async (data, requestEvent) => {
   const client = tursoClient(requestEvent);
   const { email, password } = data as { email: string; password: string };
-  
+
   try {
+    console.log('[LOGIN] Intentando login para email:', email);
     const result = await client.execute({
       sql: 'SELECT * FROM users WHERE email = ?',
       args: [email]
     });
-    
+    console.log('[LOGIN] Resultado de búsqueda en DB:', result.rows);
+
     const user = result.rows[0];
-    if (!user || typeof user.password_hash !== 'string' || !user.id) {
-      console.error('Login: usuario no encontrado o datos inválidos', { email, user });
-      return { success: false, error: 'Invalid user data' };
+    if (!user) {
+      console.error('[LOGIN] Usuario no encontrado para email:', email);
+      return { success: false, error: 'Usuario no encontrado' };
     }
-    console.log('Login: password ingresada:', password);
-    console.log('Login: hash guardado:', user.password_hash);
+    if (typeof user.password_hash !== 'string') {
+      console.error('[LOGIN] password_hash inválido:', user.password_hash);
+      return { success: false, error: 'password_hash inválido' };
+    }
+    if (!user.id) {
+      console.error('[LOGIN] user.id inválido:', user.id);
+      return { success: false, error: 'user.id inválido' };
+    }
+    console.log('[LOGIN] password ingresada:', password);
+    console.log('[LOGIN] hash guardado:', user.password_hash);
     const isValid = await verifyPassword(password, user.password_hash);
-    console.log('Login: resultado de verificación:', isValid);
+    console.log('[LOGIN] resultado de verifyPassword:', isValid);
     if (!isValid) {
-      return { success: false, error: 'Invalid password' };
+      console.error('[LOGIN] Contraseña incorrecta para email:', email);
+      return { success: false, error: 'Contraseña incorrecta' };
     }
-    
+
     // Convert user.id to string to avoid type issues
     const userIdString = String(user.id);
-    
-    await client.execute({
-      sql: 'UPDATE users SET session_expires = ? WHERE id = ?',
-      args: [new Date(Date.now() + 60 * 60 * 1000), userIdString]
-    });
+
+    try {
+      await client.execute({
+        sql: 'UPDATE users SET session_expires = ? WHERE id = ?',
+        args: [new Date(Date.now() + 60 * 60 * 1000), userIdString]
+      });
+      console.log('[LOGIN] session_expires actualizado para user:', userIdString);
+    } catch (e) {
+      console.error('[LOGIN] Error actualizando session_expires:', e);
+    }
 
     // Get user type with proper type casting
     const userType = (user.type === 'admin')
@@ -137,15 +153,15 @@ export const useLogin = routeAction$(async (data, requestEvent) => {
       : (user.type === 'super_admin')
         ? 'super_admin'
         : 'freelancer';
-    
+
     // Use the utility function to set cookies
     setCookies(requestEvent, userIdString, userType);
+    console.log('[LOGIN] Cookies seteadas para user:', userIdString, userType);
 
-    
-    requestEvent.redirect(302, '/' );
+    requestEvent.redirect(302, '/');
     return { success: true };
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('[LOGIN] Error general en login:', error);
     return { success: false, error: 'Login failed' };
   }
 });

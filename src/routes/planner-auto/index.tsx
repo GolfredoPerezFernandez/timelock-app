@@ -4,6 +4,7 @@ import { component$, useSignal, $, useStore, useVisibleTask$, useTask$, isBrowse
 import { routeLoader$, routeAction$, Form, zod$, z } from '@builder.io/qwik-city';
 import { tursoClient, runMigrations } from '~/utils/turso';
 import { getSession } from '~/utils/auth';
+import { isAdmin } from '~/utils/isAdmin';
 import { formatCurrency, to12Hour, to24Hour } from '~/utils/format';
 import { DateTime } from 'luxon';
 import { TIMEZONES } from '~/utils/timezones';
@@ -53,9 +54,15 @@ interface Professional {
 
 // Data Loader
 export const usePaymentsLoader = routeLoader$(async (requestEvent) => {
-  // Ejecutar migraciones para asegurar que todas las tablas existen
+  // DEBUG: Log de entrada
+  console.log('[planner-auto] loader: requestEvent', {
+    url: requestEvent.request.url
+  });
   await runMigrations(requestEvent);
-  
+  const session = await getSession(requestEvent);
+  if (!session.isAuthenticated) {
+    throw requestEvent.fail(401, { error: 'Unauthorized' });
+  }
   const db = tursoClient(requestEvent);
   const url = new URL(requestEvent.request.url);
   const month = url.searchParams.get('month') || (new Date().getMonth() + 1).toString();
@@ -66,18 +73,20 @@ export const usePaymentsLoader = routeLoader$(async (requestEvent) => {
   const lastDay = endDate.getDate();
   const endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-  const paymentsResult = await db.execute({
-    sql: `
+  let sql = `
       SELECT p.id, p.professional_id, prof.name as professional_name, prof.wallet as professional_wallet,
              p.amount, p.currency, p.status, p.due_date, p.description, p.contract_id, c.id as contract_id, c.start_date, c.end_date, c.status as contract_status, c.contract_url
       FROM payments p
       JOIN professionals prof ON p.professional_id = prof.id
       LEFT JOIN contracts c ON p.contract_id = c.id
-      WHERE p.due_date BETWEEN ? AND ?
-      ORDER BY p.due_date ASC
-    `,
-    args: [startDate, endDateStr]
-  });
+      WHERE p.due_date BETWEEN ? AND ?`;
+  const args: any[] = [startDate, endDateStr];
+  if (!isAdmin(session)) {
+    sql += ' AND p.professional_id = ?';
+    args.push(session.userId);
+  }
+  sql += '\n      ORDER BY p.due_date ASC';
+  const paymentsResult = await db.execute({ sql, args });
 
   const professionalsResult = await db.execute('SELECT id, name, wallet FROM professionals ORDER BY name');
 
@@ -89,13 +98,16 @@ export const usePaymentsLoader = routeLoader$(async (requestEvent) => {
     ORDER BY c.start_date DESC
   `);
 
-  return {
+  const result = {
     payments: (paymentsResult.rows as any[]).map(r => ({...r, amount: Number(r.amount)})) as Payment[],
     professionals: professionalsResult.rows as unknown as Professional[],
     contracts: contractsResult.rows as any[],
     currentMonth: Number(month),
     currentYear: Number(year)
   };
+  // DEBUG: Log de salida del loader
+  console.log('[planner-auto] loader result', JSON.stringify(result, null, 2));
+  return result;
 });
 
 // Save Payment Action
@@ -199,14 +211,18 @@ export const useSavePayment = routeAction$(
           }
           
           // En este punto tenemos toda la información necesaria para el TimeLock
-          // Pero necesitamos devolver los datos para que el cliente ejecute la transacción MetaMask
-          // No podemos ejecutar MetaMask directamente desde el servidor
-          // Ahora devolvemos los datos para que el cliente ejecute la transacción y solo después de éxito se guarde el pago
-          return { 
-            success: true, 
+          // Insertar el pago en la tabla payments con estado 'pending' antes de devolver needsBlockchainAction: true
+          const insertResult = await db.execute({
+            sql: `INSERT INTO payments (user_id, professional_id, contract_id, amount, currency, status, description, due_date, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, datetime('now'), datetime('now'))`,
+            args: [session.userId, professional_id, contract_id || null, amount, currency, description || null, due_date],
+          });
+          const payment_id = Number(insertResult.lastInsertRowid);
+          return {
+            success: true,
             needsBlockchainAction: true,
-            autoSchedule: true, 
-            payment_id: null, // El ID se generará después
+            autoSchedule: true,
+            payment_id,
             professional_wallet: professionalWallet as string,
             professional_name: professionalName,
             amount: Number(amount),
@@ -304,6 +320,19 @@ export const useUpdateTimelockTransaction = routeAction$(async ({ payment_id, tx
       return { success: false, error: 'ID de pago no válido' };
     }
 
+    // Asegura que exista el registro en timelocks para este payment_id
+    const existing = await db.execute({
+      sql: 'SELECT id FROM timelocks WHERE payment_id = ?',
+      args: [payment_id]
+    });
+    if (existing.rows.length === 0) {
+      // Insertar el registro si no existe
+      await db.execute({
+        sql: 'INSERT INTO timelocks (payment_id, release_timestamp, status, tx_hash) VALUES (?, ?, ?, ?)',
+        args: [payment_id, Math.floor(Date.now() / 1000), status, tx_hash]
+      });
+    }
+
     await db.execute({
       sql: 'UPDATE timelocks SET tx_hash = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE payment_id = ?',
       args: [tx_hash, status, payment_id]
@@ -370,9 +399,20 @@ function getTokenAddress(currency: string): `0x${string}` | undefined {
   }
 }
 
+
+export const useAuthLoader = routeLoader$(async (event) => {
+  const session = await getSession(event);
+  if (!session) {
+    throw event.redirect(302, '/auth');
+  }
+  return session;
+});
+
 export default component$(() => {
 
 
+  // Proteger ruta: solo usuarios logueados
+  const session = useAuthLoader();
   const loaderData = usePaymentsLoader();
   const saveAction = useSavePayment();
   const processAction = useProcessPayment();
@@ -1456,11 +1496,11 @@ export default component$(() => {
                   </div>
                 )}
                 
-                {saveAction.value && 'warning' in saveAction.value && saveAction.value.warning && (
-                  <div class="p-4 bg-amber-50 text-amber-700 rounded-b-lg border-t border-amber-200">
-                    <LuAlertCircle class="inline h-5 w-5 mr-2" /> {String(saveAction.value.warning)}
-                  </div>
-                )}
+                {saveAction.value && 'warning' in saveAction.value && saveAction.value.warning
+                  ? (<div class="p-4 bg-amber-50 text-amber-700 rounded-b-lg border-t border-amber-200">
+                      <LuAlertCircle class="inline h-5 w-5 mr-2" /> {String(saveAction.value.warning)}
+                    </div>) as any
+                  : null}
               </Form>
             </div>
           </div>

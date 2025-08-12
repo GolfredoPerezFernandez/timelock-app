@@ -2,6 +2,15 @@ import { component$, useSignal, useStore, $ } from '@builder.io/qwik';
 import { routeLoader$, routeAction$, Form, z, zod$ } from '@builder.io/qwik-city';
 import { tursoClient } from '~/utils/turso';
 import { getSession } from '~/utils/auth';
+
+
+export const useAuthLoader = routeLoader$(async (event) => {
+  const session = await getSession(event);
+  if (!session?.isAuthenticated) {
+    throw event.redirect(302, '/auth');
+  }
+  return session;
+});
 import { formatCurrency } from '~/utils/format';
 import { 
   LuFileText, 
@@ -163,6 +172,7 @@ const getYears = () => {
 };
 
 export default component$(() => {
+  useAuthLoader();
   const settlementsData = useSettlementsLoader();
   const addAction = useAddSettlement();
   const updateStatusAction = useUpdateSettlementStatus();
