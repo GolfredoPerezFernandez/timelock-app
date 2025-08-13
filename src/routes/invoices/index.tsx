@@ -63,13 +63,28 @@ interface Contract {
 
 export const useInvoicesLoader = routeLoader$(async (requestEvent) => {
   const client = tursoClient(requestEvent);
-  
-  const invoicesResult = await client.execute(`
-    SELECT i.id, i.professional_id, p.name as professional_name, i.contract_id, i.amount, i.currency, i.status, i.issue_date, i.paid_date, i.invoice_url 
-    FROM invoices i
-    JOIN professionals p ON i.professional_id = p.id
-    ORDER BY i.issue_date DESC
-  `);
+  const session = await getSession(requestEvent);
+  let invoicesResult;
+  if (session.isAuthenticated && session.role === 'admin') {
+    invoicesResult = await client.execute(`
+      SELECT i.id, i.professional_id, p.name as professional_name, i.contract_id, i.amount, i.currency, i.status, i.issue_date, i.paid_date, i.invoice_url 
+      FROM invoices i
+      JOIN professionals p ON i.professional_id = p.id
+      ORDER BY i.issue_date DESC
+    `);
+  } else if (session.isAuthenticated && session.userId) {
+    invoicesResult = await client.execute({
+      sql: `SELECT i.id, i.professional_id, p.name as professional_name, i.contract_id, i.amount, i.currency, i.status, i.issue_date, i.paid_date, i.invoice_url 
+            FROM invoices i
+            JOIN professionals p ON i.professional_id = p.id
+            WHERE i.user_id = ?
+            ORDER BY i.issue_date DESC`,
+      args: [session.userId]
+    });
+  } else {
+    // Not authenticated, return empty
+    invoicesResult = { rows: [] };
+  }
 
   const professionalsResult = await client.execute('SELECT id, name, role FROM professionals ORDER BY name');
   

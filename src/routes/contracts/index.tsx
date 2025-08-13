@@ -42,7 +42,7 @@ interface Professional {
 export const useContractsLoader = routeLoader$(async (requestEvent) => {
   const session = await getSession(requestEvent);
   if (!session.isAuthenticated) {
-    throw requestEvent.fail(401, { error: 'Unauthorized' });
+    return requestEvent.fail(401, { error: 'Unauthorized' });
   }
   const client = tursoClient(requestEvent);
   let sql = `SELECT c.id, c.professional_id, p.name as professional_name, c.start_date, c.end_date, c.status, c.contract_url 
@@ -56,7 +56,7 @@ export const useContractsLoader = routeLoader$(async (requestEvent) => {
       args: [session.userId]
     });
     if (!profRes.rows.length) {
-      throw requestEvent.fail(403, { error: 'No professional profile found for this user.' });
+      return requestEvent.fail(403, { error: 'No professional profile found for this user.' });
     }
     const professionalId = String(profRes.rows[0].id);
     sql += ' WHERE c.professional_id = ?';
@@ -65,7 +65,17 @@ export const useContractsLoader = routeLoader$(async (requestEvent) => {
     (session as any).professionalId = professionalId;
   }
   const result = await client.execute({ sql, args });
-  return result.rows as unknown as Contract[];
+  // Ensure all fields are defined and of correct type
+  const contracts = (result.rows as any[]).map((row) => ({
+    id: typeof row.id === 'number' ? row.id : 0,
+    professional_id: typeof row.professional_id === 'number' ? row.professional_id : 0,
+    professional_name: typeof row.professional_name === 'string' ? row.professional_name : 'N/A',
+    start_date: typeof row.start_date === 'string' ? row.start_date : '',
+    end_date: typeof row.end_date === 'string' ? row.end_date : '',
+    status: typeof row.status === 'string' ? row.status : 'unknown',
+    contract_url: typeof row.contract_url === 'string' ? row.contract_url : null,
+  }));
+  return contracts as Contract[];
 });
 
 export const useProfessionalsLoader = routeLoader$(async (requestEvent) => {
@@ -79,7 +89,7 @@ export const useCreateContract = routeAction$(async (data, requestEvent) => {
   const session = await getSession(requestEvent);
 
   if (!session.isAuthenticated || !session.userId) {
-    throw requestEvent.redirect(303, '/auth');
+    return requestEvent.redirect(303, '/auth');
   }
 
   let professionalId = data.professionalId;
@@ -90,7 +100,7 @@ export const useCreateContract = routeAction$(async (data, requestEvent) => {
       args: [session.userId]
     });
     if (!profRes.rows.length) {
-      throw requestEvent.fail(403, { error: 'No professional profile found for this user.' });
+      return requestEvent.fail(403, { error: 'No professional profile found for this user.' });
     }
     professionalId = String(profRes.rows[0].id);
   }
@@ -120,12 +130,13 @@ export default component$(() => {
   const createContractAction = useCreateContract();
 
   // Determine if user is admin and if user has a professional profile
+  const contractsData = Array.isArray(contracts.value) ? contracts.value : [];
   const session = typeof window !== 'undefined' ? null : (contracts as any)?.session;
-  const isAdminUser = contracts.value.length > 0 && isAdmin && isAdmin(contracts.value[0] as any);
+  const isAdminUser = contractsData.length > 0 && isAdmin && isAdmin(contractsData[0] as any);
   // For non-admins, check if they have a professional profile
   let userProfessionalId: string | null = null;
-  if (!isAdminUser && contracts.value.length > 0) {
-    userProfessionalId = String(contracts.value[0].professional_id);
+  if (!isAdminUser && contractsData.length > 0) {
+    userProfessionalId = String(contractsData[0].professional_id);
   }
 
   // Debug logs
@@ -156,8 +167,18 @@ export default component$(() => {
   const filteredContracts = useSignal<Contract[]>([]);
 
   useTask$(({ track }) => {
-    track(() => contracts.value);
-    filteredContracts.value = contracts.value;
+    const contractsList = track(() => Array.isArray(contracts.value) ? contracts.value : []);
+    const query = track(() => searchQuery.value);
+    if (!query) {
+      filteredContracts.value = contractsList;
+    } else {
+      const q = query.toLowerCase();
+      filteredContracts.value = contractsList.filter(
+        contract =>
+          contract.professional_name.toLowerCase().includes(q) ||
+          contract.id.toString().includes(q)
+      );
+    }
   });
 
   const resetModalState = $(() => {
@@ -220,19 +241,8 @@ export default component$(() => {
     }
   });
   
-  const updateFilteredList = $(() => {
-    if (!searchQuery.value) {
-      filteredContracts.value = contracts.value;
-      return;
-    }
-    
-    const query = searchQuery.value.toLowerCase();
-    filteredContracts.value = contracts.value.filter(
-      contract => 
-        contract.professional_name.toLowerCase().includes(query) ||
-        contract.id.toString().includes(query)
-    );
-  });
+
+  // Removed updateFilteredList, filtering is now handled reactively in useTask$
   
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return 'N/A';
@@ -297,7 +307,6 @@ export default component$(() => {
               <input
                 type="text"
                 bind:value={searchQuery}
-                onInput$={updateFilteredList}
                 class="block w-full pl-10 pr-3 py-2 border border-slate-200 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 placeholder-slate-400 shadow-sm hover:border-teal-400 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm transition-all duration-200"
                 placeholder="Search by professional or ID..."
               />
@@ -338,47 +347,59 @@ export default component$(() => {
                 </tr>
               </thead>
               <tbody class="bg-white dark:bg-slate-800 divide-y divide-slate-200 dark:divide-slate-700">
-                {filteredContracts.value.map((contract: Contract) => (
-                  <tr key={contract.id} class="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-all duration-200 group">
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:text-teal-600 dark:group-hover:text-teal-500">
-                      #CONT-{contract.id.toString().padStart(3, '0')}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700 dark:text-slate-200 font-medium">
-                      {contract.professional_name}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">
-                      {formatDate(contract.start_date)}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">
-                      {formatDate(contract.end_date)}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                      <span class={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        contract.status === 'active' 
-                          ? 'bg-gradient-to-r from-emerald-50 to-emerald-100 text-emerald-700 dark:from-emerald-900/30 dark:to-emerald-800/30 dark:text-emerald-400' 
-                          : 'bg-gradient-to-r from-rose-50 to-rose-100 text-rose-700 dark:from-rose-900/30 dark:to-rose-800/30 dark:text-rose-400'
-                      }`}>
-                        {contract.status.charAt(0).toUpperCase() + contract.status.slice(1)}
-                      </span>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div class="flex justify-end space-x-2">
-                        {contract.contract_url ? (
-                           <a href={`/api/contracts/view/${contract.contract_url}`} target="_blank" rel="noopener noreferrer" class="p-1.5 text-slate-600 dark:text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:text-teal-400 dark:hover:bg-teal-900/20 rounded-full transition-all" title="View Contract">
-                             <LuEye class="h-5 w-5" />
-                           </a>
-                         ) : (
-                           <button class="p-1.5 text-slate-400 dark:text-slate-600 rounded-full transition-all cursor-not-allowed" disabled title="No contract uploaded">
-                             <LuEye class="h-5 w-5" />
-                           </button>
-                         )}
-                        <button class="p-1.5 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:text-indigo-400 dark:hover:bg-indigo-900/20 rounded-full transition-all">
-                          <LuFileText class="h-5 w-5" />
-                        </button>
-                      </div>
+                {Array.isArray(filteredContracts.value) ? (
+                  filteredContracts.value.map((contract: Contract) => {
+                    // Ensure contract_url is never undefined
+                    const contractUrl = typeof contract.contract_url === 'string' ? contract.contract_url : null;
+                    return (
+                      <tr key={contract.id} class="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-all duration-200 group">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:text-teal-600 dark:group-hover:text-teal-500">
+                          #CONT-{contract.id.toString().padStart(3, '0')}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700 dark:text-slate-200 font-medium">
+                          {contract.professional_name || 'N/A'}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">
+                          {formatDate(contract.start_date)}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">
+                          {formatDate(contract.end_date)}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          <span class={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                            contract.status === 'active' 
+                              ? 'bg-gradient-to-r from-emerald-50 to-emerald-100 text-emerald-700 dark:from-emerald-900/30 dark:to-emerald-800/30 dark:text-emerald-400' 
+                              : 'bg-gradient-to-r from-rose-50 to-rose-100 text-rose-700 dark:from-rose-900/30 dark:to-rose-800/30 dark:text-rose-400'
+                          }`}>
+                            {contract.status?.charAt(0).toUpperCase() + contract.status?.slice(1) || 'N/A'}
+                          </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <div class="flex justify-end space-x-2">
+                            {contractUrl ? (
+                              <a href={`/api/contracts/view/${contractUrl}`} target="_blank" rel="noopener noreferrer" class="p-1.5 text-slate-600 dark:text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:text-teal-400 dark:hover:bg-teal-900/20 rounded-full transition-all" title="View Contract">
+                                <LuEye class="h-5 w-5" />
+                              </a>
+                            ) : (
+                              <button class="p-1.5 text-slate-400 dark:text-slate-600 rounded-full transition-all cursor-not-allowed" disabled title="No contract uploaded">
+                                <LuEye class="h-5 w-5" />
+                              </button>
+                            )}
+                            <button class="p-1.5 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:text-indigo-400 dark:hover:bg-indigo-900/20 rounded-full transition-all">
+                              <LuFileText class="h-5 w-5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={6} class="text-center text-red-500 py-8">
+                      Error loading contracts. Please try again.
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
@@ -580,11 +601,34 @@ export default component$(() => {
                     Cancel
                   </button>
                 </div>
-                {createContractAction.value?.success === false && (
-                  <div class="p-4 bg-red-100 text-red-800 rounded-b-lg">
-                    <LuAlertTriangle class="inline h-5 w-5 mr-2" />
-                    {createContractAction.value.error}
-                  </div>
+                {/* Mostrar errores de acción y validación de forma segura */}
+                {createContractAction.value &&
+                  (('success' in createContractAction.value && createContractAction.value.success === false) ||
+                  ('failed' in createContractAction.value && createContractAction.value.failed)) && (
+                    <div class="p-4 bg-red-100 text-red-800 rounded-b-lg">
+                      <LuAlertTriangle class="inline h-5 w-5 mr-2" />
+                      {/* Error general */}
+                      {('error' in createContractAction.value && typeof createContractAction.value.error === 'string' && createContractAction.value.error.length > 0) ? (
+                        <span>{createContractAction.value.error}</span>
+                      ) : null}
+                      {/* Errores de validación de campos */}
+                      {Array.isArray((createContractAction.value as any).formErrors) && (createContractAction.value as any).formErrors.length > 0 && (
+                        <ul class="mt-2 list-disc list-inside text-sm">
+                          {(createContractAction.value as any).formErrors.map((err: string) => (
+                            <li>{err}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {typeof (createContractAction.value as any).fieldErrors === 'object' && (createContractAction.value as any).fieldErrors !== null && (
+                        <ul class="mt-2 list-disc list-inside text-sm">
+                          {Object.entries((createContractAction.value as any).fieldErrors).map(([field, err]) =>
+                            Array.isArray(err) && err.length > 0 ? (
+                              <li key={field}><b>{field}:</b> {err.join(', ')}</li>
+                            ) : null
+                          )}
+                        </ul>
+                      )}
+                    </div>
                 )}
               </Form>
             </div>
