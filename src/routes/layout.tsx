@@ -75,12 +75,6 @@ export default component$(() => {
         description: 'View payment schedules',
       },
       {
-        name: 'Payment Scheduler',
-        href: '/planner-auto',
-        icon: LuClock,
-        description: 'Automate payment schedules',
-      },
-      {
         name: 'Settings',
         href: '/settings',
         icon: LuSettings,

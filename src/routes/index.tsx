@@ -16,7 +16,7 @@ export const useAuthLoader = routeLoader$(async (event) => {
 // Dashboard data loader
 export const useDashboardDataLoader = routeLoader$(async (requestEvent) => {
   // Ensure DB migrations are always run before any queries
-  await runMigrations(requestEvent);
+  //await runMigrations(requestEvent);
   const db = tursoClient(requestEvent);
   try {
     // Get counts and summary data
@@ -266,13 +266,19 @@ export default component$(() => {
                         currency: invoice.currency === 'KNRT' ? 'USD' : invoice.currency
                       }).format(invoice.amount)} {invoice.currency === 'KNRT' ? 'KNRT' : ''}</td>
                       <td class="px-6 py-4 whitespace-nowrap">
-                        <span class={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
-                          invoice.status === 'paid' 
-                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
-                            : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'
-                        }`}>
-                          {invoice.status === 'paid' ? 'Pagado' : 'Pendiente'}
-                        </span>
+                          <span class={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
+                            invoice.status === 'paid'
+                              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
+                              : invoice.status === 'awaiting_release'
+                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300'
+                                : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'
+                          }`}>
+                            {invoice.status === 'paid'
+                              ? 'Pagado'
+                              : invoice.status === 'awaiting_release'
+                                ? 'Esperando liberación'
+                                : 'Pendiente'}
+                          </span>
                       </td>
                     </tr>
                   ))

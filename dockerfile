@@ -39,8 +39,10 @@ FROM base as final
 ENV NODE_ENV production
 ENV ORIGIN https://saveetimelock-knrt.fly.dev/
 
-# Crear el directorio de uploads y dar permisos al usuario node
-RUN mkdir -p /usr/src/app/private_uploads && chown node:node /usr/src/app/private_uploads
+
+# Crear los directorios de uploads y dar permisos al usuario node
+RUN mkdir -p /usr/src/app/private_uploads /usr/src/app/private_uploads/invoices /usr/src/app/public/uploads \
+   && chown node:node /usr/src/app/private_uploads /usr/src/app/private_uploads/invoices /usr/src/app/public/uploads
 
 # Run the application as a non-root user.
 USER node

@@ -94,7 +94,7 @@ export const useRegister = routeAction$(async (data, requestEvent) => {
 
 // Loader to ensure DB tables exist y migraciones
 export const useDbInitializer = routeLoader$(async (requestEvent) => {
-  await runMigrations(requestEvent);
+//  await runMigrations(requestEvent);
   // Ejecuta también createAdminUser para asegurar admin
   // await createAdminUser(requestEvent);
   return { success: true };

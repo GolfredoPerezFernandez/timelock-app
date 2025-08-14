@@ -3,6 +3,7 @@ import { routeLoader$, routeAction$, Form, zod$ } from '@builder.io/qwik-city';
 import { tursoClient } from '~/utils/turso';
 import { getSession } from '~/utils/auth';
 import { isAdmin } from '~/utils/isAdmin';
+import type { UserSession } from '~/utils/auth';
 import { 
   LuBriefcase, 
   LuSearch,
@@ -27,6 +28,7 @@ interface Contract {
   id: number;
   professional_id: number;
   professional_name: string;
+  professional_email: string;
   start_date: string;
   end_date: string;
   status: string;
@@ -45,37 +47,29 @@ export const useContractsLoader = routeLoader$(async (requestEvent) => {
     return requestEvent.fail(401, { error: 'Unauthorized' });
   }
   const client = tursoClient(requestEvent);
-  let sql = `SELECT c.id, c.professional_id, p.name as professional_name, c.start_date, c.end_date, c.status, c.contract_url 
+  let sql = `SELECT c.id, c.professional_id, p.name as professional_name, p.email as professional_email, c.start_date, c.end_date, c.status, c.contract_url 
     FROM contracts c
     JOIN professionals p ON c.professional_id = p.id`;
   let args: any[] = [];
   if (!isAdmin(session)) {
-    // Buscar el professional_id asociado al usuario normal
-    const profRes = await client.execute({
-      sql: 'SELECT id FROM professionals WHERE user_id = ?',
-      args: [session.userId]
-    });
-    if (!profRes.rows.length) {
-      return requestEvent.fail(403, { error: 'No professional profile found for this user.' });
-    }
-    const professionalId = String(profRes.rows[0].id);
-    sql += ' WHERE c.professional_id = ?';
-    args.push(professionalId);
-    // Guardar el professionalId en la sesión para usarlo en la creación de contratos
-    (session as any).professionalId = professionalId;
+    // Solo mostrar contratos donde el email del profesional coincide con el del usuario
+    sql += ' WHERE p.email = ?';
+    args.push(session.email);
   }
+  sql += ' ORDER BY c.start_date DESC';
   const result = await client.execute({ sql, args });
-  // Ensure all fields are defined and of correct type
   const contracts = (result.rows as any[]).map((row) => ({
     id: typeof row.id === 'number' ? row.id : 0,
     professional_id: typeof row.professional_id === 'number' ? row.professional_id : 0,
     professional_name: typeof row.professional_name === 'string' ? row.professional_name : 'N/A',
+    professional_email: typeof row.professional_email === 'string' ? row.professional_email : 'N/A',
     start_date: typeof row.start_date === 'string' ? row.start_date : '',
     end_date: typeof row.end_date === 'string' ? row.end_date : '',
     status: typeof row.status === 'string' ? row.status : 'unknown',
     contract_url: typeof row.contract_url === 'string' ? row.contract_url : null,
   }));
-  return contracts as Contract[];
+  // Retornar contratos y sesión juntos
+  return { contracts, session };
 });
 
 export const useProfessionalsLoader = routeLoader$(async (requestEvent) => {
@@ -125,18 +119,30 @@ export const useCreateContract = routeAction$(async (data, requestEvent) => {
 ));
 
 export default component$(() => {
-  const contracts = useContractsLoader();
+  const loaderData = useContractsLoader();
   const professionals = useProfessionalsLoader();
   const createContractAction = useCreateContract();
 
-  // Determine if user is admin and if user has a professional profile
-  const contractsData = Array.isArray(contracts.value) ? contracts.value : [];
-  const session = typeof window !== 'undefined' ? null : (contracts as any)?.session;
-  const isAdminUser = contractsData.length > 0 && isAdmin && isAdmin(contractsData[0] as any);
-  // For non-admins, check if they have a professional profile
+  // Recargar contratos cuando se crea uno nuevo exitosamente
+  useTask$(({ track }) => {
+    const result = track(() => createContractAction.value);
+    // Si la acción NO falló y no hay errores, recargar loader
+    if (result && !('failed' in result && result.failed) && !('formErrors' in result && Array.isArray(result.formErrors) && result.formErrors.length > 0)) {
+      if (typeof window !== 'undefined') {
+        window.location.reload();
+      }
+    }
+  });
+
+  // Tipos explícitos para loaderData
+  type LoaderResult = { contracts: Contract[]; session: UserSession };
+  const data = loaderData.value as LoaderResult;
+  const contracts: Contract[] = data?.contracts ?? [];
+  const session: UserSession | undefined = data?.session;
+  const isAdminUser = !!session && isAdmin(session);
   let userProfessionalId: string | null = null;
-  if (!isAdminUser && contractsData.length > 0) {
-    userProfessionalId = String(contractsData[0].professional_id);
+  if (!isAdminUser && contracts.length > 0) {
+    userProfessionalId = String(contracts[0].professional_id);
   }
 
   // Debug logs
@@ -147,7 +153,7 @@ export default component$(() => {
     // eslint-disable-next-line no-console
     console.log('[DEBUG contracts] userProfessionalId:', userProfessionalId);
     // eslint-disable-next-line no-console
-    console.log('[DEBUG contracts] contracts.value:', contracts.value);
+  console.log('[DEBUG contracts] contracts:', contracts);
     // eslint-disable-next-line no-console
     console.log('[DEBUG contracts] professionals.value:', professionals.value);
   }
@@ -164,20 +170,22 @@ export default component$(() => {
   const uploadError = useSignal('');
   const fileInputRef = useSignal<HTMLInputElement>();
 
-  const filteredContracts = useSignal<Contract[]>([]);
+  const filteredContracts = useSignal<Contract[]>(contracts);
 
   useTask$(({ track }) => {
-    const contractsList = track(() => Array.isArray(contracts.value) ? contracts.value : []);
-    const query = track(() => searchQuery.value);
+    const contractsList: Contract[] = track(() => contracts);
+    const query = track(() => searchQuery.value.trim().toLowerCase());
     if (!query) {
       filteredContracts.value = contractsList;
     } else {
-      const q = query.toLowerCase();
-      filteredContracts.value = contractsList.filter(
-        contract =>
-          contract.professional_name.toLowerCase().includes(q) ||
-          contract.id.toString().includes(q)
-      );
+      filteredContracts.value = contractsList.filter((contract: Contract) => {
+        return (
+          contract.professional_name.toLowerCase().includes(query) ||
+          contract.professional_email.toLowerCase().includes(query) ||
+          contract.id.toString().includes(query) ||
+          contract.status.toLowerCase().includes(query)
+        );
+      });
     }
   });
 
@@ -276,12 +284,11 @@ export default component$(() => {
             </div>
             
             <div class="mt-4 sm:mt-0 flex flex-col sm:flex-row gap-3">
-              {/* Only show Create Contract button if admin, or if user has a professional profile */}
-              {(isAdminUser || userProfessionalId) && (
+              {/* Solo mostrar el botón de crear contrato si es admin */}
+              {isAdminUser && (
                 <button
                   onClick$={() => {
-                    // Only allow modal if admin or user has professional profile
-                    if (isAdminUser || userProfessionalId) showNewContractModal.value = true;
+                    if (isAdminUser) showNewContractModal.value = true;
                   }}
                   class="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-all duration-200"
                 >
@@ -333,6 +340,9 @@ export default component$(() => {
                     Professional
                   </th>
                   <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                    Email
+                  </th>
+                  <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">
                     Start Date
                   </th>
                   <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">
@@ -358,6 +368,9 @@ export default component$(() => {
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-700 dark:text-slate-200 font-medium">
                           {contract.professional_name || 'N/A'}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">
+                          {contract.professional_email || 'N/A'}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">
                           {formatDate(contract.start_date)}
@@ -417,7 +430,7 @@ export default component$(() => {
         {/* Pagination - Optional */}
         <div class="flex items-center justify-between mt-6 bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700">
           <div class="text-sm text-slate-600 dark:text-slate-400">
-            Showing <span class="font-medium text-teal-600 dark:text-teal-500">{filteredContracts.value.length}</span> of <span class="font-medium text-teal-600 dark:text-teal-500">{contracts.value.length}</span> contracts
+            Showing <span class="font-medium text-teal-600 dark:text-teal-500">{filteredContracts.value.length}</span> of <span class="font-medium text-teal-600 dark:text-teal-500">{contracts.length}</span> contracts
           </div>
         </div>
       </div>

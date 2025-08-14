@@ -39,10 +39,9 @@ interface Professional {
 }
 
 
-import { runMigrations } from '~/utils/turso';
 
 export const useProfessionalsLoader = routeLoader$(async (requestEvent) => {
-  await runMigrations(requestEvent);
+  //await runMigrations(requestEvent);
   const client = tursoClient(requestEvent);
   const result = await client.execute('SELECT id, name, role, email, phone, wallet FROM professionals ORDER BY name');
   return result.rows as unknown as Professional[];
@@ -50,7 +49,7 @@ export const useProfessionalsLoader = routeLoader$(async (requestEvent) => {
 
 export const useAddProfessional = routeAction$(
   async (data, requestEvent) => {
-    await runMigrations(requestEvent);
+   // await runMigrations(requestEvent);
     const client = tursoClient(requestEvent);
 
     const session = await getSession(requestEvent);
@@ -87,7 +86,7 @@ export const useAddProfessional = routeAction$(
 
 export const useDeleteProfessional = routeAction$(
   async (data, requestEvent) => {
-    await runMigrations(requestEvent);
+    //await runMigrations(requestEvent);
     const client = tursoClient(requestEvent);
 
     const session = await getSession(requestEvent);
@@ -151,7 +150,7 @@ export const useDeleteProfessional = routeAction$(
 
 export const useEditProfessional = routeAction$(
   async (data, requestEvent) => {
-    await runMigrations(requestEvent);
+    //await runMigrations(requestEvent);
     const client = tursoClient(requestEvent);
 
     const session = await getSession(requestEvent);

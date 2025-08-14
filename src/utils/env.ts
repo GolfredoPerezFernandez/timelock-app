@@ -34,7 +34,7 @@ export const ENV = {
   // Example hardcoded values for contract addresses that might come from env variables
   TIMELOCK_CONTRACT_ADDRESS: getEnv(
     'PUBLIC_TIMELOCK_CONTRACT',
-    '0x3FaD005Daf5DBc6Bb2E7645932557EBC1776Ef3e' // Default fallback value
+    '0xa210Fff1cfD0ffBdF4A623682dB2102bef8473D2' // Default fallback value
   ),
   // Token addresses
   TOKEN_ADDRESSES: {

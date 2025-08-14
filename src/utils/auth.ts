@@ -7,6 +7,7 @@ export interface UserSession {
   userId: string | null;
   role: 'freelancer' | 'admin' | 'super_admin' | null;
   is_admin: boolean;
+  email: string | null;
 }
 
 // This function will be our single source of truth for session state
@@ -15,7 +16,7 @@ export const getSession = async (requestEvent: RequestEventBase): Promise<UserSe
   const userRole = requestEvent.cookie.get('user_type')?.value as UserSession['role'];
 
   if (!userId || !userRole) {
-    return { isAuthenticated: false, userId: null, role: null, is_admin: false };
+    return { isAuthenticated: false, userId: null, role: null, is_admin: false, email: null };
   }
 
   // Solo el usuario con email 'admin@gmail.com' es admin
@@ -35,7 +36,7 @@ export const getSession = async (requestEvent: RequestEventBase): Promise<UserSe
     });
     if (rs.rows.length === 0) {
       clearAuthCookies(requestEvent);
-      return { isAuthenticated: false, userId: null, role: null, is_admin: false };
+      return { isAuthenticated: false, userId: null, role: null, is_admin: false, email: null };
     }
     const user = rs.rows[0] as unknown as { email: string; type: string };
     if (user.email === 'admin@gmail.com') {
@@ -48,17 +49,17 @@ export const getSession = async (requestEvent: RequestEventBase): Promise<UserSe
         role = 'freelancer';
       }
     }
+    return {
+      isAuthenticated: true,
+      userId: userId,
+      role,
+      is_admin,
+      email: user.email ?? null,
+    };
   } catch (e) {
     console.error('Session validation DB error:', e);
-    return { isAuthenticated: false, userId: null, role: null, is_admin: false };
+    return { isAuthenticated: false, userId: null, role: null, is_admin: false, email: null };
   }
-
-  return {
-    isAuthenticated: true,
-    userId: userId,
-    role,
-    is_admin,
-  };
 };
 
 
@@ -163,7 +164,7 @@ export const setCookies = (
     httpOnly: true,
     sameSite: 'strict' as const,
     secure: requestEvent.url.protocol === 'https:',
-    maxAge: 60 * 60 * 24 * 30 // 30 days
+  maxAge: 60 * 60 // 1 hour
   };
 
   requestEvent.cookie.set('auth_token', userIdStr, cookieOptions);

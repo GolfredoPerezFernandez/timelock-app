@@ -86,6 +86,12 @@ export const timelock_abi = [
           "internalType": "uint256[]",
           "name": "amounts",
           "type": "uint256[]"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "invoiceId",
+          "type": "uint256"
         }
       ],
       "name": "LockCreated",
@@ -191,6 +197,11 @@ export const timelock_abi = [
           "internalType": "uint256",
           "name": "releaseTime",
           "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "invoiceId",
+          "type": "uint256"
         }
       ],
       "name": "createLock",
@@ -267,6 +278,65 @@ export const timelock_abi = [
           "internalType": "uint256[][]",
           "name": "recipientAmounts",
           "type": "uint256[][]"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "invoiceIds",
+          "type": "uint256[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        }
+      ],
+      "name": "getLocksByRecipient",
+      "outputs": [
+        {
+          "internalType": "uint256[]",
+          "name": "ids",
+          "type": "uint256[]"
+        },
+        {
+          "internalType": "address[]",
+          "name": "tokens",
+          "type": "address[]"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "amounts",
+          "type": "uint256[]"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "releaseTimes",
+          "type": "uint256[]"
+        },
+        {
+          "internalType": "bool[]",
+          "name": "released",
+          "type": "bool[]"
+        },
+        {
+          "internalType": "address[][]",
+          "name": "recipientsArr",
+          "type": "address[][]"
+        },
+        {
+          "internalType": "uint256[][]",
+          "name": "recipientAmounts",
+          "type": "uint256[][]"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "invoiceIds",
+          "type": "uint256[]"
         }
       ],
       "stateMutability": "view",
@@ -301,6 +371,11 @@ export const timelock_abi = [
           "internalType": "bool",
           "name": "released",
           "type": "bool"
+        },
+        {
+          "internalType": "uint256",
+          "name": "invoiceId",
+          "type": "uint256"
         }
       ],
       "stateMutability": "view",

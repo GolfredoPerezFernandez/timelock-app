@@ -45,6 +45,7 @@ interface Invoice {
   issue_date: string;
   paid_date: string | null;
   invoice_url: string | null;
+  created_date?: string | null;
 }
 
 interface Professional {
@@ -67,19 +68,21 @@ export const useInvoicesLoader = routeLoader$(async (requestEvent) => {
   let invoicesResult;
   if (session.isAuthenticated && session.role === 'admin') {
     invoicesResult = await client.execute(`
-      SELECT i.id, i.professional_id, p.name as professional_name, i.contract_id, i.amount, i.currency, i.status, i.issue_date, i.paid_date, i.invoice_url 
+      SELECT i.id, i.professional_id, p.name as professional_name, i.contract_id, i.amount, i.currency, i.status, i.issue_date, i.paid_date, i.invoice_url, i.created_date 
       FROM invoices i
       JOIN professionals p ON i.professional_id = p.id
-      ORDER BY i.issue_date DESC
+      ORDER BY i.created_date DESC
     `);
-  } else if (session.isAuthenticated && session.userId) {
+  } else if (session.isAuthenticated && session.email) {
+    // Mostrar solo invoices de contratos donde el email del profesional coincide con el del usuario
     invoicesResult = await client.execute({
-      sql: `SELECT i.id, i.professional_id, p.name as professional_name, i.contract_id, i.amount, i.currency, i.status, i.issue_date, i.paid_date, i.invoice_url 
+      sql: `SELECT i.id, i.professional_id, p.name as professional_name, i.contract_id, i.amount, i.currency, i.status, i.issue_date, i.paid_date, i.invoice_url, i.created_date 
             FROM invoices i
             JOIN professionals p ON i.professional_id = p.id
-            WHERE i.user_id = ?
-            ORDER BY i.issue_date DESC`,
-      args: [session.userId]
+            JOIN contracts c ON i.contract_id = c.id
+            WHERE p.email = ?
+            ORDER BY i.created_date DESC`,
+      args: [session.email]
     });
   } else {
     // Not authenticated, return empty
@@ -122,9 +125,10 @@ export const useAddInvoice = routeAction$(
     const professionalId = (contractResult.rows[0] as any).professional_id;
 
     try {
+      const now = new Date().toISOString();
       await client.execute({
-        sql: 'INSERT INTO invoices (contract_id, professional_id, user_id, issue_date, amount, currency, status, paid_date, invoice_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        args: [data.contractId, professionalId, session.userId, data.issueDate, data.amount, data.currency, data.status, data.status === 'paid' ? new Date().toISOString().split('T')[0] : null, data.invoiceUrl]
+        sql: 'INSERT INTO invoices (contract_id, professional_id, user_id, issue_date, amount, currency, status, paid_date, invoice_url, created_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        args: [data.contractId, professionalId, session.userId, data.issueDate, data.amount, data.currency, data.status, data.status === 'paid' ? new Date().toISOString().split('T')[0] : null, data.invoiceUrl, now]
       });
       return { success: true };
     } catch (error) {
@@ -179,7 +183,7 @@ export const useDeleteInvoice = routeAction$(async ({ id }, requestEvent) => {
 }));
 
 export default component$(() => {
-  useAuthLoader();
+  const session = useAuthLoader();
   const invoicesData = useInvoicesLoader();
   const addInvoiceAction = useAddInvoice();
   const updateStatusAction = useUpdateInvoiceStatus();
@@ -187,7 +191,7 @@ export default component$(() => {
 
   const showAddModal = useSignal(false);
   const searchQuery = useSignal('');
-  
+
   const contractId = useSignal('');
   const issueDate = useSignal(new Date().toISOString().split('T')[0]);
   const amount = useSignal('');
@@ -205,13 +209,16 @@ export default component$(() => {
     track(() => invoicesData.value.invoices);
     track(() => searchQuery.value);
     const query = searchQuery.value.toLowerCase();
-    if (!query) {
-      filteredInvoices.value = invoicesData.value.invoices;
-    } else {
-      filteredInvoices.value = invoicesData.value.invoices.filter(
-        inv => inv.professional_name.toLowerCase().includes(query)
-      );
+    let filtered = invoicesData.value.invoices;
+    if (query) {
+      filtered = filtered.filter(inv => inv.professional_name.toLowerCase().includes(query));
     }
+    // Ordenar por created_date descendente (más reciente primero)
+    filteredInvoices.value = [...filtered].sort((a, b) => {
+      const dateA = a.created_date ? new Date(a.created_date).getTime() : 0;
+      const dateB = b.created_date ? new Date(b.created_date).getTime() : 0;
+      return dateB - dateA;
+    });
   });
 
   const totalPending = useSignal(0);
@@ -248,7 +255,7 @@ export default component$(() => {
       return;
     }
     const file = input.files[0];
-    
+
     isUploading.value = true;
     uploadError.value = '';
 
@@ -298,6 +305,9 @@ export default component$(() => {
   };
 
   const formatCurrency = (amount: number, currency: string) => {
+    if (currency === 'KNRT') {
+      return `${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} KNRT`;
+    }
     return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
   };
 
@@ -318,13 +328,15 @@ export default component$(() => {
                 </p>
               </div>
             </div>
-            <button 
-              onClick$={() => showAddModal.value = true}
-              class="mt-4 sm:mt-0 inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-all duration-200"
-            >
-              <LuPlus class="mr-2 h-4 w-4" />
-              Add Invoice
-            </button>
+            {session.value.role === 'admin' && (
+              <button 
+                onClick$={() => showAddModal.value = true}
+                class="mt-4 sm:mt-0 inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-all duration-200"
+              >
+                <LuPlus class="mr-2 h-4 w-4" />
+                Add Invoice
+              </button>
+            )}
           </div>
         </header>
 
@@ -368,6 +380,7 @@ export default component$(() => {
               <thead class="bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-700">
                 <tr>
                   <th class="px-6 py-4 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Professional</th>
+                  <th class="px-6 py-4 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Created</th>
                   <th class="px-6 py-4 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Issue Date</th>
                   <th class="px-6 py-4 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Amount</th>
                   <th class="px-6 py-4 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">Status</th>
@@ -378,6 +391,7 @@ export default component$(() => {
                 {filteredInvoices.value.map((invoice) => (
                   <tr key={invoice.id} class="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-all duration-200 group">
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-800 dark:text-slate-100">{invoice.professional_name}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">{formatDate(invoice.created_date ?? null)}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">{formatDate(invoice.issue_date)}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-800 dark:text-slate-100 font-semibold">{formatCurrency(invoice.amount, invoice.currency)}</td>
                     <td class="px-6 py-4 whitespace-nowrap">

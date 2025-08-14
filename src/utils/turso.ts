@@ -144,6 +144,14 @@ export async function runMigrations(requestEvent: RequestEventBase): Promise<voi
     FOREIGN KEY (professional_id) REFERENCES professionals(id),
     FOREIGN KEY (user_id) REFERENCES users(id)
   );`);
+    // Asegura columna created_date (por si la tabla ya existía sin ella)
+    try {
+      await client.execute(`ALTER TABLE invoices ADD COLUMN created_date DATETIME;`);
+    } catch (e: any) {
+      if (!String(e.message).toLowerCase().includes("duplicate column name")) throw e;
+    }
+    // Actualiza los registros existentes para que created_date tenga el valor de created_at si es nulo
+    await client.execute(`UPDATE invoices SET created_date = created_at WHERE created_date IS NULL;`);
 
   // SETTLEMENTS TABLE
   await client.execute(`CREATE TABLE IF NOT EXISTS settlements (
@@ -192,13 +200,17 @@ export async function runMigrations(requestEvent: RequestEventBase): Promise<voi
   await client.execute(`CREATE TABLE IF NOT EXISTS timelocks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       payment_id INTEGER NOT NULL,
+      invoice_id INTEGER,
       release_timestamp INTEGER NOT NULL,
       status TEXT NOT NULL CHECK(status IN ('pending', 'completed', 'failed')),
       tx_hash TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (payment_id) REFERENCES payments(id)
+      FOREIGN KEY (payment_id) REFERENCES payments(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
   );`);
+  // Asegura columna invoice_id (por si la tabla ya existía sin ella)
+  try { await client.execute(`ALTER TABLE timelocks ADD COLUMN invoice_id INTEGER;`); } catch (e: any) { if (!String(e.message).toLowerCase().includes("duplicate column name")) throw e; }
   
   // Crear índice en payment_id para mejorar el rendimiento de las consultas
   await client.execute(`CREATE INDEX IF NOT EXISTS idx_timelocks_payment_id ON timelocks(payment_id);`);

@@ -52,9 +52,9 @@ export function useTimelock() {
       });
       
       // Verificar que obtuvimos cuentas
+      // Verificar que obtuvimos cuentas
       if (!accounts || accounts.length === 0) {
         error.value = "No se autorizó el acceso a MetaMask";
-        status.value = "";
         console.error("No se autorizó el acceso a MetaMask - No se devolvieron cuentas");
         return false;
       }
@@ -108,10 +108,10 @@ export function useTimelock() {
 
   // Dirección del contrato 
   // En producción usar la variable de entorno PUBLIC_TIMELOCK_CONTRACT
-  const CONTRACT_ADDRESS = '0x3FaD005Daf5DBc6Bb2E7645932557EBC1776Ef3e' as `0x${string}`;
+  const CONTRACT_ADDRESS = '0xa210Fff1cfD0ffBdF4A623682dB2102bef8473D2' as `0x${string}`;
 
   // Crear lock
-  const createLock = $(async (token: string, totalAmount: string, recipients: string, amounts: string, releaseTime: string) => {
+  const createLock = $(async (token: string, totalAmount: string, recipients: string, amounts: string, releaseTime: string, invoiceId: string | number) => {
     if (!isBrowser) {
         error.value = "Esta acción solo se puede realizar en el navegador.";
         return;
@@ -139,8 +139,12 @@ export function useTimelock() {
     
     // Validar parámetros
     try {
-      console.log('[timelock.createLock] params:', { token, totalAmount, recipients, amounts, releaseTime });
-      if (!token || !totalAmount || !recipients || !amounts || !releaseTime) {
+  console.log('[timelock.createLock] params:', { token, totalAmount, recipients, amounts, releaseTime, invoiceId });
+      // DEBUG: Mostrar invoiceId si está disponible en el scope
+      if ((window as any).lastInvoiceId) {
+        console.log('[timelock.createLock] lastInvoiceId:', (window as any).lastInvoiceId);
+      }
+  if (!token || !totalAmount || !recipients || !amounts || !releaseTime || invoiceId === undefined) {
         error.value = "Completa todos los campos";
         status.value = "";
         return;
@@ -238,7 +242,8 @@ export function useTimelock() {
           total,
           recArr,
           amtArr.map(a => parseUnits(a.toString(), decimals)),
-          relTime
+          relTime,
+          typeof invoiceId === 'string' ? BigInt(invoiceId) : invoiceId
         ],
         account: address.value as `0x${string}`
       });
@@ -271,6 +276,10 @@ export function useTimelock() {
     loadingLocks.value = true;
     error.value = "";
     console.log("[TimeLock] Iniciando carga de locks...");
+    // DEBUG: Mostrar locks de la base de datos si están disponibles en window
+    if ((window as any).dbLocks) {
+      console.log('[TimeLock] dbLocks:', (window as any).dbLocks);
+    }
     try {
       const publicClient = createPublicClient({
         chain: base,
@@ -283,16 +292,16 @@ export function useTimelock() {
         functionName: "getAllLocks"
       });
       console.log("[TimeLock] Resultado de getAllLocks:", result);
-      // result: [ids, tokens, amounts, releaseTimes, released, recipients, recipientAmounts]
-      if (!result || !Array.isArray(result) || result.length < 7) {
+      // result: [ids, tokens, amounts, releaseTimes, released, recipients, recipientAmounts, invoiceIds]
+      if (!result || !Array.isArray(result) || result.length < 8) {
         error.value = "El contrato no devolvió el formato esperado de locks.";
         console.error("[TimeLock] Formato inesperado:", result);
         locks.value = [];
         loadingLocks.value = false;
         return;
       }
-      const [ids, tokens, amounts, releaseTimes, released, recipients, recipientAmounts] = result as [
-        number[], string[], bigint[], bigint[], boolean[], string[][], bigint[][]
+      const [ids, tokens, amounts, releaseTimes, released, recipients, recipientAmounts, invoiceIds] = result as [
+        number[], string[], bigint[], bigint[], boolean[], string[][], bigint[][], bigint[]
       ];
       const arr = (ids || []).map((id, idx) => ({
         id,
@@ -301,7 +310,8 @@ export function useTimelock() {
         releaseTime: releaseTimes[idx],
         released: released[idx],
         recipients: recipients[idx],
-        amounts: recipientAmounts[idx]
+        amounts: recipientAmounts[idx],
+        invoiceId: invoiceIds[idx]
       }));
       locks.value = arr;
       console.log("[TimeLock] Locks parseados:", arr);
