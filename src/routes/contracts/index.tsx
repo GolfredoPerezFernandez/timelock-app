@@ -33,6 +33,7 @@ interface Contract {
   end_date: string;
   status: string;
   contract_url: string | null;
+  created_at: string;
 }
 
 interface Professional {
@@ -47,7 +48,7 @@ export const useContractsLoader = routeLoader$(async (requestEvent) => {
     return requestEvent.fail(401, { error: 'Unauthorized' });
   }
   const client = tursoClient(requestEvent);
-  let sql = `SELECT c.id, c.professional_id, p.name as professional_name, p.email as professional_email, c.start_date, c.end_date, c.status, c.contract_url 
+  let sql = `SELECT c.id, c.professional_id, p.name as professional_name, p.email as professional_email, c.start_date, c.end_date, c.status, c.contract_url, c.created_at 
     FROM contracts c
     JOIN professionals p ON c.professional_id = p.id`;
   let args: any[] = [];
@@ -67,6 +68,7 @@ export const useContractsLoader = routeLoader$(async (requestEvent) => {
     end_date: typeof row.end_date === 'string' ? row.end_date : '',
     status: typeof row.status === 'string' ? row.status : 'unknown',
     contract_url: typeof row.contract_url === 'string' ? row.contract_url : null,
+    created_at: typeof row.created_at === 'string' ? row.created_at : '',
   }));
   // Retornar contratos y sesión juntos
   return { contracts, session };
@@ -118,10 +120,29 @@ export const useCreateContract = routeAction$(async (data, requestEvent) => {
   })
 ));
 
+export const useDeleteContract = routeAction$(async ({ id }, requestEvent) => {
+  const client = tursoClient(requestEvent);
+  const session = await getSession(requestEvent);
+  if (!session.isAuthenticated || !isAdmin(session)) {
+    return { success: false, error: 'Only admin can delete contracts.' };
+  }
+  try {
+    await client.execute({ sql: 'DELETE FROM contracts WHERE id = ?', args: [id] });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: 'Failed to delete contract.' };
+  }
+}, zod$((z) => ({
+  id: z.coerce.number()
+})));
+
 export default component$(() => {
   const loaderData = useContractsLoader();
   const professionals = useProfessionalsLoader();
   const createContractAction = useCreateContract();
+  const deleteContractAction = useDeleteContract();
+  const showDeleteModal = useSignal(false);
+  const contractToDelete = useSignal<number | null>(null);
 
   // Recargar contratos cuando se crea uno nuevo exitosamente
   useTask$(({ track }) => {
@@ -131,6 +152,16 @@ export default component$(() => {
       if (typeof window !== 'undefined') {
         window.location.reload();
       }
+    }
+  });
+
+  // Recargar contratos cuando se elimina uno
+  useTask$(({ track }) => {
+    const result = track(() => deleteContractAction.value);
+    if (result?.success) {
+      showDeleteModal.value = false;
+      contractToDelete.value = null;
+      if (typeof window !== 'undefined') window.location.reload();
     }
   });
 
@@ -172,22 +203,28 @@ export default component$(() => {
 
   const filteredContracts = useSignal<Contract[]>(contracts);
 
-  useTask$(({ track }) => {
-    const contractsList: Contract[] = track(() => contracts);
-    const query = track(() => searchQuery.value.trim().toLowerCase());
-    if (!query) {
-      filteredContracts.value = contractsList;
-    } else {
-      filteredContracts.value = contractsList.filter((contract: Contract) => {
-        return (
-          contract.professional_name.toLowerCase().includes(query) ||
-          contract.professional_email.toLowerCase().includes(query) ||
-          contract.id.toString().includes(query) ||
-          contract.status.toLowerCase().includes(query)
-        );
-      });
-    }
+useTask$(({ track }) => {
+  let contractsList: Contract[] = track(() => contracts);
+  // Ordenar por created_at descendente (más reciente primero)
+  contractsList = [...contractsList].sort((a, b) => {
+    const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return dateB - dateA;
   });
+  const query = track(() => searchQuery.value.trim().toLowerCase());
+  if (!query) {
+    filteredContracts.value = contractsList;
+  } else {
+    filteredContracts.value = contractsList.filter((contract: Contract) => {
+      return (
+        contract.professional_name.toLowerCase().includes(query) ||
+        contract.professional_email.toLowerCase().includes(query) ||
+        contract.id.toString().includes(query) ||
+        contract.status.toLowerCase().includes(query)
+      );
+    });
+  }
+});
 
   const resetModalState = $(() => {
     professionalId.value = '';
@@ -296,10 +333,6 @@ export default component$(() => {
                   Create Contract
                 </button>
               )}
-              <button class="inline-flex items-center justify-center px-4 py-2 border border-slate-200 dark:border-slate-600 rounded-md shadow-sm text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-all duration-200">
-                <LuDownload class="mr-2 h-4 w-4" />
-                Export
-              </button>
             </div>
           </div>
         </header>
@@ -318,12 +351,7 @@ export default component$(() => {
                 placeholder="Search by professional or ID..."
               />
             </div>
-            <div class="flex-shrink-0">
-              <button class="inline-flex items-center px-4 py-2 border border-slate-200 dark:border-slate-600 rounded-md shadow-sm text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-all duration-200">
-                <LuFilter class="mr-2 h-4 w-4" />
-                Filter
-              </button>
-            </div>
+           
           </div>
         </div>
         
@@ -347,6 +375,9 @@ export default component$(() => {
                   </th>
                   <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">
                     End Date
+                  </th>
+                  <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                    Created At
                   </th>
                   <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-slate-600 dark:text-slate-300 uppercase tracking-wider">
                     Status
@@ -378,6 +409,9 @@ export default component$(() => {
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">
                           {formatDate(contract.end_date)}
                         </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">
+                          {formatDate(contract.created_at)}
+                        </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                           <span class={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
                             contract.status === 'active' 
@@ -398,9 +432,20 @@ export default component$(() => {
                                 <LuEye class="h-5 w-5" />
                               </button>
                             )}
-                            <button class="p-1.5 text-slate-600 dark:text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:text-indigo-400 dark:hover:bg-indigo-900/20 rounded-full transition-all">
-                              <LuFileText class="h-5 w-5" />
-                            </button>
+                            {/* Eliminar solo si es admin */}
+                            {isAdminUser && (
+                              <button
+                                onClick$={() => {
+                                  contractToDelete.value = contract.id;
+                                  showDeleteModal.value = true;
+                                }}
+                                class="p-1.5 text-slate-600 dark:text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20 rounded-full transition-all"
+                                title="Delete Contract"
+                              >
+                                <LuTrash2 class="h-5 w-5" />
+                              </button>
+                            )}
+                            {/* ...other actions... */}
                           </div>
                         </td>
                       </tr>
@@ -608,7 +653,7 @@ export default component$(() => {
                       showNewContractModal.value = false;
                       resetModalState();
                     }}
-                    class="mt-3 w-full inline-flex justify-center items-center rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm px-5 py-2.5 bg-white dark:bg-slate-800 text-base font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition-all duration-200"
+                    class="mt-3 w-full inline-flex justify-center items-center rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm px-5 py-2.5 bg-white dark:bg-slate-800 text-base font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition-all duration-200"
                   >
                     <LuX class="h-5 w-5 mr-2" />
                     Cancel
@@ -645,6 +690,59 @@ export default component$(() => {
                 )}
               </Form>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Modal */}
+      {showDeleteModal.value && (
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md mx-4 sm:mx-auto z-10 overflow-hidden">
+            <div class="bg-gradient-to-r from-red-500 to-red-600 py-6 px-6">
+              <h3 class="text-xl font-semibold text-white flex items-center">
+                <LuTrash2 class="h-5 w-5 mr-2" />
+                Confirm Delete
+              </h3>
+              <p class="text-red-100 text-sm mt-1">This action cannot be undone</p>
+            </div>
+            <Form action={deleteContractAction}>
+              <div class="p-6">
+                <input type="hidden" name="id" value={contractToDelete.value} />
+                <div class="text-center mb-6">
+                  <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900/30">
+                    <LuTrash2 class="h-6 w-6 text-red-600 dark:text-red-500" />
+                  </div>
+                  <h3 class="mt-3 text-lg font-medium text-slate-900 dark:text-slate-100">Delete Contract</h3>
+                  <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                    Are you sure you want to delete this contract? This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+              <div class="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-700 dark:to-slate-800 px-6 py-4 sm:flex sm:flex-row-reverse">
+                <button
+                  type="submit"
+                  disabled={deleteContractAction.isRunning}
+                  class="w-full inline-flex justify-center items-center rounded-lg border border-transparent shadow-sm px-5 py-2.5 bg-gradient-to-r from-red-500 to-red-600 text-base font-medium text-white hover:from-red-600 hover:to-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm transition-all duration-200 disabled:opacity-50"
+                >
+                  {deleteContractAction.isRunning ? <LuLoader2 class="animate-spin h-5 w-5 mr-2" /> : <LuTrash2 class="h-5 w-5 mr-2" />}
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  onClick$={() => showDeleteModal.value = false}
+                  class="mt-3 w-full inline-flex justify-center items-center rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm px-5 py-2.5 bg-white dark:bg-slate-800 text-base font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm transition-all duration-200"
+                >
+                  <LuX class="h-5 w-5 mr-2" />
+                  Cancel
+                </button>
+              </div>
+              {deleteContractAction.value?.success === false && (
+                <div class="p-4 bg-red-100 text-red-800 rounded-b-lg">
+                  <LuAlertTriangle class="inline h-5 w-5 mr-2" />
+                  {deleteContractAction.value.error}
+                </div>
+              )}
+            </Form>
           </div>
         </div>
       )}

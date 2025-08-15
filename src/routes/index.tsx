@@ -31,7 +31,9 @@ export const useDashboardDataLoader = routeLoader$(async (requestEvent) => {
       `,
       args: []
     });
-    const totalSettled = await db.execute("SELECT SUM(total_in_knrt) as total FROM settlements WHERE status = 'paid'");
+    // Settlements info
+    const settlementsTotal = await db.execute("SELECT COUNT(*) as count FROM settlements");
+    const settlementsPaid = await db.execute("SELECT SUM(total_amount) as total FROM settlements WHERE status = 'paid'");
     const recentProfessionals = await db.execute({
       sql: `
         SELECT id, name, role, created_at 
@@ -66,7 +68,9 @@ export const useDashboardDataLoader = routeLoader$(async (requestEvent) => {
         total: pendingInvoices.rows[0]?.total || 0
       },
       upcomingPayments: upcomingPayments.rows[0]?.count || 0,
-      totalSettled: totalSettled.rows[0]?.total || 0,
+      totalSettled: settlementsPaid.rows[0]?.total || 0,
+      settlementsTotal: settlementsTotal.rows[0]?.count || 0,
+      settlementsPaid: settlementsPaid.rows[0]?.total || 0,
       recentProfessionals: recentProfessionals.rows || [],
       recentInvoices: recentInvoices.rows || []
     };
@@ -116,7 +120,9 @@ export default component$(() => {
     pendingInvoices: Number(dashboardData.value.pendingInvoices?.count) || 0,
     upcomingPayments: Number(dashboardData.value.upcomingPayments) || 0,
     totalSettled: Number(dashboardData.value.totalSettled) || 0,
-    pendingAmount: Number(dashboardData.value.pendingInvoices?.total) || 0
+    pendingAmount: Number(dashboardData.value.pendingInvoices?.total) || 0,
+    settlementsTotal: Number(dashboardData.value.settlementsTotal) || 0,
+    settlementsPaid: Number(dashboardData.value.settlementsPaid) || 0
   };
 
   return (
@@ -169,15 +175,17 @@ export default component$(() => {
             </div>
           </div>
 
-          {/* Upcoming Payments */}
+
+          {/* Settlements Info */}
           <div class="bg-white dark:bg-slate-800 rounded-xl shadow-elegant p-6 border border-slate-100 dark:border-slate-700 transition-all hover:shadow-elegant-lg">
             <div class="flex justify-between items-center">
               <div>
-                <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Upcoming Payments</p>
-                <p class="text-2xl font-bold mt-1 text-slate-800 dark:text-slate-100">{dashboardStats.upcomingPayments}</p>
+                <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Total Settlements</p>
+                <p class="text-2xl font-bold mt-1 text-slate-800 dark:text-slate-100">{dashboardStats.settlementsTotal}</p>
+                <p class="text-sm font-medium text-slate-500 dark:text-slate-400 mt-2">Paid: <span class="font-bold text-green-600 dark:text-green-400">{formatCurrency(dashboardStats.settlementsPaid, 'KNRT')}</span></p>
               </div>
-              <div class="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-100 to-indigo-200 dark:from-indigo-800/30 dark:to-indigo-700/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shadow-sm">
-                <LuClock class="w-6 h-6" />
+              <div class="w-12 h-12 rounded-full bg-gradient-to-br from-green-100 to-green-200 dark:from-green-800/30 dark:to-green-700/30 flex items-center justify-center text-green-600 dark:text-green-400 shadow-sm">
+                <LuDollarSign class="w-6 h-6" />
               </div>
             </div>
           </div>

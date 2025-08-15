@@ -15,7 +15,15 @@ export const getSession = async (requestEvent: RequestEventBase): Promise<UserSe
   const userId = requestEvent.cookie.get('auth_token')?.value;
   const userRole = requestEvent.cookie.get('user_type')?.value as UserSession['role'];
 
+  // Debug log para ver cookies recibidas
+  if (process.env.NODE_ENV !== 'production') {
+    console.debug('[SESSION DEBUG] auth_token:', userId, 'user_type:', userRole);
+  }
+
   if (!userId || !userRole) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[SESSION DEBUG] Falta auth_token o user_type. userId:', userId, 'userRole:', userRole);
+    }
     return { isAuthenticated: false, userId: null, role: null, is_admin: false, email: null };
   }
 
@@ -36,6 +44,9 @@ export const getSession = async (requestEvent: RequestEventBase): Promise<UserSe
     });
     if (rs.rows.length === 0) {
       clearAuthCookies(requestEvent);
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[SESSION DEBUG] Usuario no encontrado en DB. userId:', userId);
+      }
       return { isAuthenticated: false, userId: null, role: null, is_admin: false, email: null };
     }
     const user = rs.rows[0] as unknown as { email: string; type: string };
@@ -58,6 +69,9 @@ export const getSession = async (requestEvent: RequestEventBase): Promise<UserSe
     };
   } catch (e) {
     console.error('Session validation DB error:', e);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('[SESSION DEBUG] Error de conexión a DB en getSession:', e);
+    }
     return { isAuthenticated: false, userId: null, role: null, is_admin: false, email: null };
   }
 };
@@ -162,9 +176,9 @@ export const setCookies = (
   const cookieOptions = {
     path: '/',
     httpOnly: true,
-    sameSite: 'strict' as const,
+    sameSite: 'lax' as const, // Permite que la cookie se envíe en nueva pestaña/iframe
     secure: requestEvent.url.protocol === 'https:',
-  maxAge: 60 * 60 // 1 hour
+    maxAge: 60 * 60 * 24 * 30 // 30 días
   };
 
   requestEvent.cookie.set('auth_token', userIdStr, cookieOptions);

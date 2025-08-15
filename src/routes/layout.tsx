@@ -74,12 +74,7 @@ export default component$(() => {
         icon: LuCalendar,
         description: 'View payment schedules',
       },
-      {
-        name: 'Settings',
-        href: '/settings',
-        icon: LuSettings,
-        description: 'Configure application settings',
-      },
+    
       ...(session.value.role === 'super_admin'
         ? [{
             name: 'User Admin',
@@ -102,8 +97,8 @@ export default component$(() => {
         description: 'Track and manage invoices',
       },
       {
-        name: 'Payment Scheduler',
-        href: '/planner-auto',
+        name: 'Settlements',
+        href: '/settlements',
         icon: LuClock,
         description: 'Automate payment schedules',
       },

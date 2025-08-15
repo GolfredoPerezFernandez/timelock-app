@@ -183,6 +183,8 @@ export const useDeleteInvoice = routeAction$(async ({ id }, requestEvent) => {
 }));
 
 export default component$(() => {
+  // Validaciones UI para el modal de creación
+  const formErrors = useSignal<{ contractId?: string; issueDate?: string; amount?: string; currency?: string; status?: string; } | null>(null);
   const session = useAuthLoader();
   const invoicesData = useInvoicesLoader();
   const addInvoiceAction = useAddInvoice();
@@ -244,6 +246,7 @@ export default component$(() => {
     invoicePreviewUrl.value = '';
     isUploading.value = false;
     uploadError.value = '';
+  formErrors.value = null;
     if (fileInputRef.value) {
       fileInputRef.value.value = '';
     }
@@ -414,19 +417,15 @@ export default component$(() => {
                              <LuEye class="h-5 w-5" />
                            </button>
                          )}
-                        <Form action={updateStatusAction}>
-                            <input type="hidden" name="id" value={invoice.id} />
-                            <input type="hidden" name="status" value={invoice.status} />
-                            <button type="submit" class="p-1.5 text-slate-600 dark:text-slate-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:text-teal-400 dark:hover:bg-teal-900/20 rounded-full transition-all" title={invoice.status === 'paid' ? 'Mark as Pending' : 'Mark as Paid'}>
-                                {invoice.status === 'paid' ? <LuClock class="h-5 w-5" /> : <LuCheckCircle class="h-5 w-5" />}
-                            </button>
-                        </Form>
-                        <Form action={deleteAction}>
+                        {/* Eliminar solo si es admin */}
+                        {session.value.role === 'admin' && (
+                          <Form action={deleteAction}>
                             <input type="hidden" name="id" value={invoice.id} />
                             <button type="submit" class="p-1.5 text-slate-600 dark:text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-900/20 rounded-full transition-all" title="Delete Invoice">
-                                <LuTrash class="h-5 w-5" />
+                              <LuTrash class="h-5 w-5" />
                             </button>
-                        </Form>
+                          </Form>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -455,6 +454,19 @@ export default component$(() => {
             <div class="inline-block align-bottom bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-xl text-left overflow-hidden shadow-2xl transform transition-all border border-slate-100/50 dark:border-slate-700/50 sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
               <Form 
                 action={addInvoiceAction}
+                onSubmit$={e => {
+                  // Validación UI antes de enviar
+                  const errors: any = {};
+                  if (!contractId.value) errors.contractId = 'Contract is required.';
+                  if (!issueDate.value || !/^\d{4}-\d{2}-\d{2}$/.test(issueDate.value)) errors.issueDate = 'Valid issue date is required.';
+                  if (!amount.value || isNaN(Number(amount.value)) || Number(amount.value) <= 0) errors.amount = 'Amount must be a positive number.';
+                  if (!currency.value) errors.currency = 'Currency is required.';
+                  if (!status.value || !['pending','paid'].includes(status.value)) errors.status = 'Status must be pending or paid.';
+                  formErrors.value = Object.keys(errors).length ? errors : null;
+                  if (Object.keys(errors).length) {
+                    e.preventDefault();
+                  }
+                }}
                 onSubmitCompleted$={() => {
                   if (addInvoiceAction.value?.success) {
                     showAddModal.value = false;
@@ -473,17 +485,20 @@ export default component$(() => {
                         <option value="">Select a contract</option>
                         {invoicesData.value.contracts.map(c => <option key={c.id} value={c.id}>{`${c.professional_name} (${formatDate(c.start_date)})`}</option>)}
                       </select>
+                      {formErrors.value?.contractId && <p class="text-red-500 text-sm mt-1">{formErrors.value.contractId}</p>}
                       {addInvoiceAction.value?.fieldErrors?.contractId && <p class="text-red-500 text-sm mt-1">{addInvoiceAction.value.fieldErrors.contractId[0]}</p>}
                     </div>
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <div>
                             <label for="issueDate" class="block text-sm font-medium text-slate-700 dark:text-slate-300">Issue Date</label>
                             <input type="date" name="issueDate" id="issueDate" bind:value={issueDate} class="mt-1 block w-full border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm py-3 px-3 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm transition-all" />
+                            {formErrors.value?.issueDate && <p class="text-red-500 text-sm mt-1">{formErrors.value.issueDate}</p>}
                             {addInvoiceAction.value?.fieldErrors?.issueDate && <p class="text-red-500 text-sm mt-1">{addInvoiceAction.value.fieldErrors.issueDate[0]}</p>}
                         </div>
                         <div>
                             <label for="amount" class="block text-sm font-medium text-slate-700 dark:text-slate-300">Amount</label>
                             <input type="number" name="amount" id="amount" bind:value={amount} class="mt-1 block w-full border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm py-3 px-3 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm transition-all" />
+                            {formErrors.value?.amount && <p class="text-red-500 text-sm mt-1">{formErrors.value.amount}</p>}
                             {addInvoiceAction.value?.fieldErrors?.amount && <p class="text-red-500 text-sm mt-1">{addInvoiceAction.value.fieldErrors.amount[0]}</p>}
                         </div>
                     </div>
@@ -495,6 +510,7 @@ export default component$(() => {
                                 <option>EUR</option>
                                 <option>KNRT</option>
                             </select>
+                            {formErrors.value?.currency && <p class="text-red-500 text-sm mt-1">{formErrors.value.currency}</p>}
                         </div>
                         <div>
                             <label for="status" class="block text-sm font-medium text-slate-700 dark:text-slate-300">Status</label>
@@ -502,6 +518,7 @@ export default component$(() => {
                                 <option value="pending">Pending</option>
                                 <option value="paid">Paid</option>
                             </select>
+                            {formErrors.value?.status && <p class="text-red-500 text-sm mt-1">{formErrors.value.status}</p>}
                         </div>
                     </div>
 
@@ -580,7 +597,7 @@ export default component$(() => {
                   </div>
                 </div>
                 <div class="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-700 dark:to-slate-800 px-6 py-4 sm:flex sm:flex-row-reverse">
-                  <button type="submit" disabled={addInvoiceAction.isRunning || isUploading.value} class="w-full inline-flex justify-center items-center rounded-lg border border-transparent shadow-sm px-5 py-2.5 bg-gradient-to-r from-teal-500 to-teal-600 text-base font-medium text-white hover:from-teal-600 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 sm:ml-3 sm:w-auto sm:text-sm transition-all duration-200 disabled:opacity-50">
+                  <button type="submit" disabled={addInvoiceAction.isRunning || isUploading.value || !!formErrors.value} class="w-full inline-flex justify-center items-center rounded-lg border border-transparent shadow-sm px-5 py-2.5 bg-gradient-to-r from-teal-500 to-teal-600 text-base font-medium text-white hover:from-teal-600 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 sm:ml-3 sm:w-auto sm:text-sm transition-all duration-200 disabled:opacity-50">
                     {addInvoiceAction.isRunning ? <LuLoader2 class="animate-spin h-5 w-5 mr-2" /> : <LuSave class="h-5 w-5 mr-2" />}
                     Save Invoice
                   </button>

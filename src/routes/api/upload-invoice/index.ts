@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { getSession } from '~/utils/auth';
 
-const UPLOAD_DIR = join(process.cwd(), 'private_uploads', 'invoices');
+const UPLOAD_DIR = join(process.cwd(), 'private_uploads');
 
 export const onPost: RequestHandler = async (requestEvent) => {
   const { request, error, json } = requestEvent;
@@ -24,16 +24,19 @@ export const onPost: RequestHandler = async (requestEvent) => {
     const file = formData.get('file') as File | null;
 
     if (!file) {
+      console.error('[UPLOAD-INVOICE] No file provided');
       json(400, { success: false, error: 'File not provided' });
       return;
     }
 
     // Basic validation
     if (!file.type.startsWith('application/pdf') && !file.type.startsWith('image/')) {
+      console.error(`[UPLOAD-INVOICE] Invalid file type: ${file.type}`);
       json(400, { success: false, error: 'Invalid file type. Only PDF and images are allowed.' });
       return;
     }
     if (file.size > 10 * 1024 * 1024) { // 10MB limit
+      console.error(`[UPLOAD-INVOICE] File too large: ${file.size}`);
       json(400, { success: false, error: 'File is too large. Max size is 10MB.' });
       return;
     }
@@ -45,6 +48,7 @@ export const onPost: RequestHandler = async (requestEvent) => {
     const filePath = join(UPLOAD_DIR, newFileName);
 
     await writeFile(filePath, fileBuffer);
+    console.log(`[UPLOAD-INVOICE] File saved: ${filePath} (size: ${fileBuffer.length})`);
 
     // Use json() to send response, consistent with contracts endpoint
     json(200, { success: true, fileName: newFileName });

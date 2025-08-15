@@ -121,25 +121,103 @@ export const useDeleteProfessional = routeAction$(
       
       // Verificar si hay pagos asociados a este profesional
       const paymentsCheck = await client.execute({
+        // Usa el nombre correcto de la columna que referencia al profesional
         sql: 'SELECT COUNT(*) as count FROM payments WHERE professional_id = ?',
         args: [data.id]
       });
-      
-      // Convertir el resultado a número para hacer la comparación
+
       const paymentsCount = Number(paymentsCheck.rows[0]?.count || 0);
       if (paymentsCount > 0) {
         return { success: false, error: 'Cannot delete a professional with associated payments.' };
       }
-      
+        // Eliminar pagos asociados al profesional
+        await client.execute({
+          sql: 'DELETE FROM payments WHERE professional_id = ?',
+          args: [data.id]
+        });
+
+      // Verificar si hay timelocks asociados a este profesional
+      // La tabla timelocks no tiene professional_id, hay que hacer JOIN con payments
+      const timelocksCheck = await client.execute({
+        sql: `SELECT COUNT(*) as count
+              FROM timelocks t
+              JOIN payments p ON t.payment_id = p.id
+              WHERE p.professional_id = ?`,
+        args: [data.id]
+      });
+
+      const timelocksCount = Number(timelocksCheck.rows[0]?.count || 0);
+      if (timelocksCount > 0) {
+        return { success: false, error: 'Cannot delete a professional with associated timelocks.' };
+      }
+        // Eliminar timelocks asociados a pagos del profesional
+        await client.execute({
+          sql: `DELETE FROM timelocks WHERE payment_id IN (SELECT id FROM payments WHERE professional_id = ?)`,
+          args: [data.id]
+        });
+
       // Eliminar el profesional
+      // Verificar si hay contratos asociados a este profesional
+      const contractsCheck = await client.execute({
+        sql: 'SELECT COUNT(*) as count FROM contracts WHERE professional_id = ?',
+        args: [data.id]
+      });
+      const contractsCount = Number(contractsCheck.rows[0]?.count || 0);
+      if (contractsCount > 0) {
+        return { success: false, error: 'Cannot delete a professional with associated contracts.' };
+      }
+        // Eliminar contratos asociados al profesional
+        await client.execute({
+          sql: 'DELETE FROM contracts WHERE professional_id = ?',
+          args: [data.id]
+        });
+
+      // Verificar si hay facturas asociadas a este profesional
+      const invoicesCheck = await client.execute({
+        sql: 'SELECT COUNT(*) as count FROM invoices WHERE professional_id = ?',
+        args: [data.id]
+      });
+      const invoicesCount = Number(invoicesCheck.rows[0]?.count || 0);
+      if (invoicesCount > 0) {
+        return { success: false, error: 'Cannot delete a professional with associated invoices.' };
+      }
+        // Eliminar facturas asociadas al profesional
+        await client.execute({
+          sql: 'DELETE FROM invoices WHERE professional_id = ?',
+          args: [data.id]
+        });
+
+      // Verificar si hay liquidaciones asociadas a este profesional
+      const settlementsCheck = await client.execute({
+        sql: 'SELECT COUNT(*) as count FROM settlements WHERE professional_id = ?',
+        args: [data.id]
+      });
+      const settlementsCount = Number(settlementsCheck.rows[0]?.count || 0);
+      if (settlementsCount > 0) {
+        return { success: false, error: 'Cannot delete a professional with associated settlements.' };
+      }
+        // Eliminar liquidaciones asociadas al profesional
+        await client.execute({
+          sql: 'DELETE FROM settlements WHERE professional_id = ?',
+          args: [data.id]
+        });
+
+      // Si no hay referencias, eliminar el profesional
       await client.execute({
         sql: 'DELETE FROM professionals WHERE id = ?',
         args: [data.id]
       });
-      
+
       return { success: true };
     } catch (error) {
       console.error('Failed to delete professional:', error);
+      const errorCode = typeof error === 'object' && error !== null && 'code' in error ? (error as any).code : undefined;
+      if (errorCode === 'SQLITE_CONSTRAINT') {
+        return { success: false, error: 'Cannot delete professional due to existing references (payments, timelocks, invoices, contracts).' };
+      }
+      if (errorCode === 'SQL_INPUT_ERROR') {
+        return { success: false, error: 'Database column name error. Please check your schema for correct column names in payments/timelocks.' };
+      }
       return { success: false, error: 'Failed to delete professional.' };
     }
   },
@@ -270,6 +348,15 @@ export default component$(() => {
     );
   });
 
+  useTask$(({ track }) => {
+    track(() => deleteProfessionalAction.value);
+    if (deleteProfessionalAction.value?.success) {
+      showDeleteConfirmModal.value = false;
+      professionalToDelete.value = null;
+      if (typeof window !== 'undefined') window.location.reload();
+    }
+  });
+
   return (
     <main class="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-slate-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -319,7 +406,7 @@ export default component$(() => {
                   searchQuery.value = (event.target as HTMLInputElement).value;
                   updateFilteredList();
                 }}
-                class="block w-full pl-10 pr-3 py-2 border border-slate-200 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 placeholder-slate-400 shadow-sm hover:border-teal-400 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm transition-all duration-200"
+                class="block w-full pl-10 pr-3 py-2 border border-slate-200 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 placeholder-slate-400 shadow-sm hover:border-teal-400 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm transition-all duration-200"
                 placeholder="Search by name or role..."
               />
             </div>
@@ -690,6 +777,7 @@ export default component$(() => {
               if (deleteProfessionalAction.value?.success) {
                 showDeleteConfirmModal.value = false;
                 professionalToDelete.value = null;
+                if (typeof window !== 'undefined') window.location.reload();
               }
             }}>
               <div class="p-6">

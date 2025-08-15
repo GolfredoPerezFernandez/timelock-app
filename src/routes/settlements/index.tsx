@@ -2,8 +2,6 @@
 // Loader for Timelocks/Locks with pagination and joins
 export const useLocksLoader = routeLoader$(async (requestEvent) => {
   // Ejecuta migraciones para asegurar que la columna invoice_id existe
-  await runMigrations(requestEvent);
-//  await runMigrations(requestEvent);
   const client = tursoClient(requestEvent);
   const session = await getSession(requestEvent);
   if (!session.isAuthenticated) {
@@ -45,11 +43,12 @@ export const useLocksLoader = routeLoader$(async (requestEvent) => {
   };
 });
 import { component$, useSignal, useStore, $, useTask$, useVisibleTask$, isBrowser } from '@builder.io/qwik';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { DateTime } from 'luxon';
 import { routeLoader$, routeAction$, zod$,  } from '@builder.io/qwik-city';
 import { z } from 'zod';
 import { useTimelock } from '../hooks/usePropertyNft';
-import { tursoClient, runMigrations } from '~/utils/turso';
+import { tursoClient } from '~/utils/turso';
 import { getSession } from '~/utils/auth';
 import { isAdmin } from '~/utils/isAdmin';
 import { formatCurrency } from '~/utils/format';
@@ -132,7 +131,6 @@ export const usePaymentsLoader = routeLoader$(async (requestEvent) => {
   console.log('[planner-auto] loader: requestEvent', {
     url: requestEvent.request.url
   });
-//  await runMigrations(requestEvent);
   const session = await getSession(requestEvent);
   if (!session.isAuthenticated) {
     throw requestEvent.fail(401, { error: 'Unauthorized' });
@@ -187,7 +185,6 @@ export const usePaymentsLoader = routeLoader$(async (requestEvent) => {
 
 // Loader: professionals, contracts, invoices grouped by professional
 export const useSettlementsLoader = routeLoader$(async (requestEvent) => {
-//  await runMigrations(requestEvent);
   const client = tursoClient(requestEvent);
   const session = await getSession(requestEvent);
   if (!session.isAuthenticated) {
@@ -205,7 +202,29 @@ export const useSettlementsLoader = routeLoader$(async (requestEvent) => {
     ORDER BY p.name, c.start_date DESC
   `);
   const contracts = contractsResult.rows as unknown as Contract[];
-  // Invoices
+
+  // Settlements: admins see all, users see only their own
+  let settlementsResult;
+  if (isAdmin(session)) {
+    settlementsResult = await client.execute(`
+      SELECT s.*, p.name as professional_name, p.email as professional_email
+      FROM settlements s
+      JOIN professionals p ON s.professional_id = p.id
+      ORDER BY s.payment_date DESC, s.id DESC
+    `);
+  } else {
+    settlementsResult = await client.execute({
+      sql: `SELECT s.*, p.name as professional_name, p.email as professional_email
+            FROM settlements s
+            JOIN professionals p ON s.professional_id = p.id
+            WHERE p.email = ?
+            ORDER BY s.payment_date DESC, s.id DESC`,
+      args: [session.email]
+    });
+  }
+  const settlements = settlementsResult.rows;
+
+  // Invoices: admins see all, users see only their own
   let invoicesResult;
   if (isAdmin(session)) {
     invoicesResult = await client.execute(`
@@ -225,12 +244,12 @@ export const useSettlementsLoader = routeLoader$(async (requestEvent) => {
     });
   }
   const invoices = (invoicesResult.rows as any[]).map(row => ({ ...row, amount: Number(row.amount) })) as Invoice[];
-  return { professionals, contracts, invoices, session };
+
+  return { professionals, contracts, invoices, settlements, session };
 });
 
 // Action to automate invoice payment (reuses logic from planner-auto)
 export const useAutomateInvoicePayment = routeAction$(async (data, requestEvent) => {
-  //await runMigrations(requestEvent);
   const client = tursoClient(requestEvent);
   const session = await getSession(requestEvent);
   if (!session.isAuthenticated || !session.userId) {
@@ -466,10 +485,8 @@ export default component$(() => {
       return;
     }
     if (automationError.value) {
-      // If there's a validation error, do not proceed
       return;
     }
-    // Calculate releaseTimestamp from the state signals
     const tz = timelockTimezone.value;
     const dateStr = timelockReleaseDate.value;
     const hour = parseInt(timelockReleaseHour.value, 10);
@@ -489,22 +506,17 @@ export default component$(() => {
         timelockWallet.value,
         timelockAmount.value.toString(),
         releaseTimestamp.toString(),
-        selectedInvoiceId.value
+        selectedInvoiceId.value,
+        automateAction // Pasar la acción para automatizar solo si la tx fue exitosa
       );
-      // Solo si createLock fue exitoso, marcar como pagado
-      if (selectedInvoiceId.value) {
-        const result = await automateAction.submit({ invoiceId: selectedInvoiceId.value, releaseTimestamp });
-        if (result.value?.success) {
-          timelockStatus.value = 'Timelock creado y factura automatizada.';
-          // Actualizar el estado local de la factura sin recargar
-          const idx = loader.value.invoices.findIndex(i => i.id === selectedInvoiceId.value);
-          if (idx !== -1) {
-            loader.value.invoices[idx].status = 'paid';
-          }
-          closeAutomateModal();
-        } else {
-          timelockError.value = result.value?.error || 'Error al automatizar la factura.';
+      // El estado y error se actualizan dentro de createLock
+      if (timelockStatus.value === 'Lock creado correctamente') {
+        timelockStatus.value = 'Timelock creado y factura automatizada.';
+        const idx = loader.value.invoices.findIndex(i => i.id === selectedInvoiceId.value);
+        if (idx !== -1) {
+          loader.value.invoices[idx].status = 'paid';
         }
+        closeAutomateModal();
       }
     } catch (e) {
       timelockError.value = (e as any)?.message || 'Error al crear el timelock en MetaMask.';
@@ -609,15 +621,17 @@ export default component$(() => {
           <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <h1 class="text-2xl font-bold text-slate-800 dark:text-slate-100">Settlements Dashboard</h1>
             <div class="flex flex-col sm:flex-row items-center gap-3">
-             <button 
-                            onClick$={() => !timelock.address.value ? timelock.connect() : (showTimelockPanel.value = !showTimelockPanel.value)} 
-                            class="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-medium text-sm shadow-md hover:from-indigo-600 hover:to-purple-600 transition-all"
-                          >
-                            {timelock.address.value ? 
-                              <><LuKey class="h-5 w-5 mr-2" /> {showTimelockPanel.value ? 'Ocultar Timelocks' : 'Ver Timelocks'}</> : 
-                              <><LuWallet class="h-5 w-5 mr-2" /> Conectar Wallet</>
-                            }
-                          </button>
+              {loader.value.session && isAdmin(loader.value.session) && (
+                <button 
+                  onClick$={() => !timelock.address.value ? timelock.connect() : (showTimelockPanel.value = !showTimelockPanel.value)} 
+                  class="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-medium text-sm shadow-md hover:from-indigo-600 hover:to-purple-600 transition-all"
+                >
+                  {timelock.address.value ? 
+                    <><LuKey class="h-5 w-5 mr-2" /> {showTimelockPanel.value ? 'Ocultar Timelocks' : 'Ver Timelocks'}</> : 
+                    <><LuWallet class="h-5 w-5 mr-2" /> Conectar Wallet</>
+                  }
+                </button>
+              )}
             </div>
           </div>
           <div class="mt-4 flex flex-wrap gap-3">
@@ -890,17 +904,125 @@ export default component$(() => {
                           {inv.invoice_url ? (
                             <a href={`/api/invoices/view/${inv.invoice_url}`} target="_blank" rel="noopener noreferrer" class="text-teal-500 hover:text-teal-400 text-sm" title="Ver factura"><LuFileText /></a>
                           ) : null}
-                          <button
-                            class="px-2 py-1 text-xs rounded bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                            disabled={statusLabel !== 'Pendiente'}
-                            onClick$={() => openAutomateModal(inv.id)}
-                            title="Automatizar pago"
-                          >Automatizar</button>
+                          {loader.value.session && isAdmin(loader.value.session) && (
+                            <button
+                              class="px-2 py-1 text-xs rounded bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              disabled={statusLabel !== 'Pendiente'}
+                              onClick$={() => openAutomateModal(inv.id)}
+                              title="Automatizar pago"
+                            >Automatizar</button>
+                          )}
                         </div>
                       </div>
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Botón para descargar PDF resumen del settlement completo */}
+              <div class="mt-4 flex justify-end">
+                <button
+                  class="px-4 py-2 rounded-lg bg-gradient-to-r from-teal-500 to-teal-600 text-white font-medium text-sm shadow-md hover:from-teal-600 hover:to-teal-700 transition-all"
+                  onClick$={$(async () => {
+                    // Helper para hacer wrap de texto largo
+                    function wrapText(page: any, text: string, x: number, y: number, font: any, size: number, maxLen: number = 60) {
+                      const lines = [];
+                      let current = text;
+                      while (current.length > maxLen) {
+                        let idx = current.lastIndexOf(' ', maxLen);
+                        if (idx === -1) idx = maxLen;
+                        lines.push(current.slice(0, idx));
+                        current = current.slice(idx).trim();
+                      }
+                      lines.push(current);
+                      lines.forEach(line => {
+                        page.drawText(line, { x, y, size, font });
+                        y -= size + 2;
+                      });
+                      return y;
+                    }
+                    await import('tslib');
+                    const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib/dist/pdf-lib.esm.js');
+                    const professional = { name: prof.name, email: prof.email, wallet: prof.wallet };
+                    // Obtén los arrays serializables antes del closure
+                    const contracts = loader.value.contracts.filter(c => c.professional_id === prof.id);
+                    const invoices = loader.value.invoices.filter(i => i.professional_id === prof.id);
+
+                    const pdfDoc = await PDFDocument.create();
+                    const page = pdfDoc.addPage([595, 842]); // A4
+                    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+                    let y = 800;
+                    page.drawText('Resumen de Settlement', { x: 50, y, size: 20, font, color: rgb(0, 0.5, 0.7) });
+                    y -= 30;
+                    page.drawText(`Profesional: ${professional.name} (${professional.email})`, { x: 50, y, size: 14, font });
+                    y -= 20;
+                    page.drawText(`Wallet: ${professional.wallet || '-'}`, { x: 50, y, size: 12, font });
+                    y -= 30;
+
+                    // Contratos
+                    page.drawText('Contratos:', { x: 50, y, size: 14, font });
+                    y -= 18;
+                    const DEPLOY_URL = 'https://saveetimelock-knrt.fly.dev';
+                    if (contracts.length === 0) {
+                      page.drawText('Sin contratos', { x: 60, y, size: 12, font });
+                      y -= 16;
+                    } else {
+                      contracts.forEach((c: any, idx: number) => {
+                        let url = c.contract_url ? `${DEPLOY_URL}/api/contracts/view/${c.contract_url}` : '';
+                        let contractText = `#${idx + 1} Estado: ${c.status} | Inicio: ${c.start_date} | Fin: ${c.end_date || 'Presente'} | URL: ${url}`;
+                        contractText += c.type ? ` | Tipo: ${c.type}` : '';
+                        contractText += c.amount ? ` | Monto: ${c.amount} ${c.currency || ''}` : '';
+                        contractText += c.description ? ` | Descripción: ${c.description}` : '';
+                        contractText += c.created_at ? ` | Creado: ${c.created_at}` : '';
+                        y = wrapText(page, contractText, 60, y, font, 12, 60);
+                      });
+                    }
+                    y -= 10;
+
+                    // Facturas
+                    page.drawText('Facturas:', { x: 50, y, size: 14, font });
+                    y -= 18;
+                    if (invoices.length === 0) {
+                      page.drawText('Sin facturas', { x: 60, y, size: 12, font });
+                      y -= 16;
+                    } else {
+                      invoices.forEach((inv: any, idx: number) => {
+                        let url = inv.invoice_url ? `${DEPLOY_URL}/api/invoices/view/${inv.invoice_url}` : '';
+                        let invoiceText = `#${idx + 1} Estado: ${inv.status} | Monto: ${inv.amount} ${inv.currency} | Emitida: ${inv.issue_date}`;
+                        invoiceText += inv.paid_date ? ` | Pagada: ${inv.paid_date}` : '';
+                        invoiceText += url ? ` | URL: ${url}` : '';
+                        invoiceText += inv.description ? ` | Descripción: ${inv.description}` : '';
+                        invoiceText += inv.created_at ? ` | Creado: ${inv.created_at}` : '';
+                        invoiceText += inv.updated_at ? ` | Actualizado: ${inv.updated_at}` : '';
+                        invoiceText += inv.professional_name ? ` | Profesional: ${inv.professional_name}` : '';
+                        y = wrapText(page, invoiceText, 60, y, font, 12, 60);
+                      });
+
+                    // Totales de facturas pagadas y pendientes
+                    const totalPaid = invoices.filter((inv: any) => inv.status === 'paid').reduce((sum: number, inv: any) => sum + (Number(inv.amount) || 0), 0);
+                    const totalPending = invoices.filter((inv: any) => inv.status === 'pending').reduce((sum: number, inv: any) => sum + (Number(inv.amount) || 0), 0);
+                    y -= 10;
+                    page.drawText(`Total pagado: ${totalPaid} USD`, { x: 60, y, size: 13, font, color: rgb(0, 0.5, 0) });
+                    y -= 16;
+                    page.drawText(`Total pendiente: ${totalPending} USD`, { x: 60, y, size: 13, font, color: rgb(0.7, 0.5, 0) });
+                    y -= 18;
+                    }
+
+                    const pdfBytes = await pdfDoc.save();
+                    const blob = new Blob([new Uint8Array(pdfBytes)], { type: 'application/pdf' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `settlement_${professional.name}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(() => {
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    }, 100);
+                  })}
+                  title="Descargar resumen PDF"
+                >Descargar resumen PDF</button>
               </div>
             </div>
           ))}

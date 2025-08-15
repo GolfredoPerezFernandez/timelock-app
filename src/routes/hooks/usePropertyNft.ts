@@ -111,19 +111,16 @@ export function useTimelock() {
   const CONTRACT_ADDRESS = '0xa210Fff1cfD0ffBdF4A623682dB2102bef8473D2' as `0x${string}`;
 
   // Crear lock
-  const createLock = $(async (token: string, totalAmount: string, recipients: string, amounts: string, releaseTime: string, invoiceId: string | number) => {
+  const createLock = $(async (token: string, totalAmount: string, recipients: string, amounts: string, releaseTime: string, invoiceId: string | number, automateAction?: any) => {
     if (!isBrowser) {
-        error.value = "Esta acción solo se puede realizar en el navegador.";
-        return;
+      error.value = "Esta acción solo se puede realizar en el navegador.";
+      return;
     }
-    // Resetear mensajes
     error.value = "";
     status.value = "Procesando operación...";
-    
-    // Verificar conexión con MetaMask
+
     if (!address.value) {
       try {
-        // Intentar conectar si no hay dirección
         const connectedAddress = await connect();
         if (!connectedAddress) {
           error.value = "Conecta MetaMask primero";
@@ -136,68 +133,37 @@ export function useTimelock() {
         return;
       }
     }
-    
-    // Validar parámetros
+
     try {
-  console.log('[timelock.createLock] params:', { token, totalAmount, recipients, amounts, releaseTime, invoiceId });
-      // DEBUG: Mostrar invoiceId si está disponible en el scope
-      if ((window as any).lastInvoiceId) {
-        console.log('[timelock.createLock] lastInvoiceId:', (window as any).lastInvoiceId);
-      }
-  if (!token || !totalAmount || !recipients || !amounts || !releaseTime || invoiceId === undefined) {
+      // ...validaciones y preparación de arrays igual...
+      if (!token || !totalAmount || !recipients || !amounts || !releaseTime || invoiceId === undefined) {
         error.value = "Completa todos los campos";
         status.value = "";
         return;
       }
-      
-      // Procesar los arrays de destinatarios y cantidades
-      const recArr = Array.isArray(recipients) 
-        ? recipients
-        : recipients.split(",").map(s => s.trim());
-        
-      const amtArr = Array.isArray(amounts)
-        ? amounts
-        : amounts.split(",").map(s => s.trim()).map(Number);
-      
+      const recArr = Array.isArray(recipients) ? recipients : recipients.split(",").map(s => s.trim());
+      const amtArr = Array.isArray(amounts) ? amounts : amounts.split(",").map(s => s.trim()).map(Number);
       if (recArr.length !== amtArr.length) {
         error.value = "recipients y amounts deben tener la misma longitud";
         status.value = "";
         return;
       }
-      
-      // Verificar timestamp futuro
       const now = Math.floor(Date.now() / 1000);
       const relTime = Number(releaseTime);
-      console.log('[timelock.createLock] now:', now, 'relTime:', relTime);
       if (relTime <= now) {
-        // CORRECCIÓN: Mensaje de error mejorado para el usuario.
         const releaseDate = new Date(relTime * 1000).toLocaleString();
         error.value = `La fecha de liberación (${releaseDate}) debe ser una fecha futura.`;
         status.value = "";
         return;
       }
-      
-      // Preparar cliente de wallet
       const decimals = 18;
       const total = parseUnits(totalAmount, decimals);
-      console.log("Monto total convertido (con decimals):", total.toString());
-      
-      const walletClient = createWalletClient({
-        chain: base,
-        transport: custom((window as any).ethereum)
-      });
-
-      const publicClient = createPublicClient({
-        chain: base,
-        transport: http(base.rpcUrls.default.http[0])
-      });
-
+      const walletClient = createWalletClient({ chain: base, transport: custom((window as any).ethereum) });
+      const publicClient = createPublicClient({ chain: base, transport: http(base.rpcUrls.default.http[0]) });
       const erc20Abi = [
         { "inputs": [ { "internalType": "address", "name": "spender", "type": "address" }, { "internalType": "uint256", "name": "amount", "type": "uint256" } ], "name": "approve", "outputs": [ { "internalType": "bool", "name": "", "type": "bool" } ], "stateMutability": "nonpayable", "type": "function" },
         { "inputs": [ { "internalType": "address", "name": "owner", "type": "address" }, { "internalType": "address", "name": "spender", "type": "address" } ], "name": "allowance", "outputs": [ { "internalType": "uint256", "name": "", "type": "uint256" } ], "stateMutability": "view", "type": "function" }
       ] as const;
-
-      // Verificar la asignación actual
       status.value = "Verificando aprobación de tokens...";
       const currentAllowance = await publicClient.readContract({
         address: token as `0x${string}`,
@@ -205,35 +171,22 @@ export function useTimelock() {
         functionName: 'allowance',
         args: [address.value as `0x${string}`, CONTRACT_ADDRESS]
       });
-      
-      console.log("Aprobación actual:", currentAllowance.toString());
-      console.log("Total necesario:", total.toString());
-
       if (currentAllowance < total) {
-        console.log("Ejecutando approve para token:", token);
-        console.log("Importe a autorizar:", total.toString());
-        console.log("Contract address para approve:", CONTRACT_ADDRESS);
-        
-        // Aprobar el token para el contrato
         status.value = "Aprobando tokens... Confirma en MetaMask";
-        // Usar un monto mayor para evitar múltiples aprobaciones (2^256 - 1)
         const maxUint256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
-        const approveTx = await walletClient.writeContract({
+        await walletClient.writeContract({
           address: token as `0x${string}`,
           abi: erc20Abi,
           functionName: "approve",
-          args: [CONTRACT_ADDRESS, maxUint256], // Aprobar el máximo posible en lugar de solo el monto actual
+          args: [CONTRACT_ADDRESS, maxUint256],
           account: address.value as `0x${string}`
         });
-        
-        console.log("Aprobación completada. TX:", approveTx);
         status.value = "Tokens aprobados. Creando timelock...";
       } else {
         status.value = "Aprobación de tokens ya existente. Creando timelock...";
       }
-      
-      // Crear el lock
-      const lockTx = await walletClient.writeContract({
+      // Crear el lock y obtener el hash de la transacción
+      const lockTxHash = await walletClient.writeContract({
         address: CONTRACT_ADDRESS,
         abi: timelock_abi,
         functionName: "createLock",
@@ -247,16 +200,22 @@ export function useTimelock() {
         ],
         account: address.value as `0x${string}`
       });
-      
-      console.log("Lock creado correctamente. TX:", lockTx);
-      status.value = "Lock creado correctamente";
-      error.value = "";
-      
-  // No llamar a loadLocks aquí, refrescar desde el componente principal si es necesario
+      status.value = "Esperando confirmación de la transacción...";
+      // Esperar el receipt
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: lockTxHash });
+      if (receipt.status === 'success') {
+        status.value = "Lock creado correctamente";
+        error.value = "";
+        // Solo automatizar el pago si la transacción fue exitosa
+        if (automateAction) {
+          await automateAction.submit({ invoiceId, releaseTimestamp: relTime });
+        }
+      } else {
+        error.value = "La transacción fue revertida o cancelada. No se automatizó el pago.";
+        status.value = "";
+      }
     } catch (e: any) {
       console.error("Error al crear lock:", e);
-      
-      // Mejorar mensajes de error comunes
       if (e.message?.includes("user rejected transaction")) {
         error.value = "Transacción rechazada por el usuario";
       } else if (e.message?.includes("insufficient funds")) {
@@ -266,7 +225,6 @@ export function useTimelock() {
       } else {
         error.value = e.message || "Error al crear lock";
       }
-      
       status.value = "";
     }
   });
